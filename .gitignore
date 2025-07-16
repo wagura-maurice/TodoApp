@@ -675,3 +675,6 @@ FodyWeavers.xsd
 
 # CodeRush
 .cr/
+
+# "object" (build artifacts, intermediate files)
+obj/

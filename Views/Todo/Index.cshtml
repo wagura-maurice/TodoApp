@@ -1,0 +1,390 @@
+@model TodoApp.ViewModels.TodoListViewModel
+
+@{
+    ViewData["Title"] = "My Todo List";
+    var hasSuccessMessage = TempData["SuccessMessage"] != null;
+    var hasErrorMessage = TempData["ErrorMessage"] != null;
+}
+
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h2 class="h5 mb-0">My Todo List</h2>
+                </div>
+                
+                <div class="card-body">
+                    <form asp-action="Create" method="post" class="mb-4" id="todo-form" onsubmit="return submitTodoForm(event)">
+                        <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+                        <div class="input-group">
+                            <input asp-for="NewTodoTitle" class="form-control form-control-lg" 
+                                   placeholder="What needs to be done?" required>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-plus-lg"></i> Add
+                            </button>
+                        </div>
+                        <div class="mt-2">
+                            <textarea asp-for="NewTodoDescription" class="form-control" rows="2" 
+                                     placeholder="Description (optional)"></textarea>
+                            <span asp-validation-for="NewTodoTitle" class="text-danger"></span>
+                        </div>
+                    </form>
+
+                    <div class="list-group" id="todo-list">
+                        @if (!Model.Todos.Any())
+                        {
+                            <div class="text-center py-4 text-muted">
+                                <i class="bi bi-check2-circle display-4 d-block mb-2"></i>
+                                <h5>No tasks yet</h5>
+                                <p class="mb-0">Add a task to get started!</p>
+                            </div>
+                        }
+                        else
+                        {
+                            foreach (var item in Model.Todos)
+                            {
+                                <div class="list-group-item list-group-item-action @(item.IsCompleted ? "bg-light" : "")">
+                                    <div class="d-flex align-items-center">
+                                        <form asp-action="ToggleComplete" method="post" class="me-2 toggle-complete-form" data-id="@item.Id">
+                                            <input type="hidden" name="id" value="@item.Id" />
+                                            <button type="button" class="btn btn-sm btn-outline-success border-0 p-0 me-2 toggle-complete-btn" 
+                                                    data-bs-toggle="tooltip" title="Toggle Complete"
+                                                    data-title="@item.Title">
+                                                <i class="bi @item.StatusIcon" style="font-size: 1.5rem;"></i>
+                                            </button>
+                                        </form>
+                                        <div class="flex-grow-1">
+                                            <h5 class="mb-1 @(item.IsCompleted ? "text-muted text-decoration-line-through" : "")">
+                                                @item.Title
+                                            </h5>
+                                            @if (!string.IsNullOrEmpty(item.Description))
+                                            {
+                                                <p class="mb-1 small text-muted">@item.Description</p>
+                                            }
+                                            <div class="d-flex align-items-center mt-1">
+                                                <small class="text-muted me-2">
+                                                    <i class="bi bi-calendar3"></i> 
+                                                    @item.CreatedAtFormatted
+                                                    @if (item.IsCompleted && item.CompletedAt.HasValue)
+                                                    {
+                                                        <span class="ms-2">
+                                                            <i class="bi bi-check2-all text-success"></i>
+                                                            @item.CompletedAtFormatted
+                                                        </span>
+                                                    }
+                                                </small>
+                                                
+                                                @if (!string.IsNullOrEmpty(item.AuthorName))
+                                                {
+                                                    <div class="d-flex align-items-center ms-2" data-bs-toggle="tooltip" title="@item.AuthorName">
+                                                        <div class="avatar-sm me-1" style="width: 20px; height: 20px; background-color: #6c757d; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.6rem; font-weight: bold;">
+                                                            @item.AuthorInitials
+                                                        </div>
+                                                        <small class="text-muted">@item.AuthorName</small>
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                        <form asp-action="Delete" method="post" class="ms-2 delete-form" data-id="@item.Id">
+                                            <input type="hidden" name="id" value="@item.Id" />
+                                            <button type="button" class="btn btn-sm btn-outline-danger delete-btn" 
+                                                    data-bs-toggle="tooltip" title="Delete"
+                                                    data-title="@item.Title">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+                
+                @if (Model.Todos.Any())
+                {
+                    <div class="card-footer bg-light d-flex justify-content-between align-items-center flex-wrap">
+                        <small class="text-muted mb-2 mb-md-0">
+                            @Model.ActiveCount @(Model.ActiveCount == 1 ? "item" : "items") left
+                        </small>
+                        <div class="btn-group" role="group" aria-label="Todo filters">
+                            <a asp-action="Index" asp-route-filter="" 
+                               class="btn btn-sm @(string.IsNullOrEmpty(Model.Filter) ? "btn-primary" : "btn-outline-secondary") ">
+                                All
+                            </a>
+                            <a asp-action="Index" asp-route-filter="active" 
+                               class="btn btn-sm @(Model.Filter == "active" ? "btn-primary" : "btn-outline-secondary") ">
+                                Active
+                            </a>
+                            <a asp-action="Index" asp-route-filter="completed" 
+                               class="btn btn-sm @(Model.Filter == "completed" ? "btn-primary" : "btn-outline-secondary") ">
+                                Completed
+                            </a>
+                        </div>
+                        @if (Model.CompletedCount > 0)
+                        {
+                            <form asp-action="ClearCompleted" method="post" class="ms-md-2 mt-2 mt-md-0">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">
+                                    Clear completed (@Model.CompletedCount)
+                                </button>
+                            </form>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Styles {
+    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
+}
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script>
+        // Enable Bootstrap tooltips
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+
+        // Auto-focus the title input when the page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            const titleInput = document.querySelector('#NewTodoTitle');
+            if (titleInput) {
+                titleInput.focus();
+            }
+
+            // Clear any existing validation messages when the form is submitted
+            const form = document.querySelector('#todo-form');
+            if (form) {
+                form.addEventListener('submit', function() {
+                    const validationMessages = form.querySelectorAll('.field-validation-error');
+                    validationMessages.forEach(function(element) {
+                        element.textContent = '';
+                    });
+                });
+            }
+        });
+
+        // Handle escape key to clear input
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                const activeElement = document.activeElement;
+                if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+                    activeElement.value = '';
+                }
+            }
+        });
+
+        // Initialize Toast
+        const Toast = Swal.mixin({
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 3000,
+            timerProgressBar: true,
+            didOpen: (toast) => {
+                toast.onmouseenter = Swal.stopTimer;
+                toast.onmouseleave = Swal.resumeTimer;
+            }
+        });
+
+        // Show success/error message from TempData if exists
+        @if (hasSuccessMessage)
+        {
+            <text>
+            Toast.fire({
+                icon: 'success',
+                title: '@Html.Raw(TempData["SuccessMessage"])'
+            });
+            </text>
+        }
+        else if (hasErrorMessage)
+        {
+            <text>
+            Toast.fire({
+                icon: 'error',
+                title: '@Html.Raw(TempData["ErrorMessage"])'
+            });
+            </text>
+        }
+
+        // Handle todo form submission with AJAX
+        function submitTodoForm(event) {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+            const submitButton = form.querySelector('button[type="submit"]');
+            
+            // Disable the submit button to prevent double submission
+            submitButton.disabled = true;
+            submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Adding...';
+            
+            fetch(form.action, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]').value
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    // Show success toast
+                    Toast.fire({
+                        icon: 'success',
+                        title: data.message || 'Todo added successfully!'
+                    });
+                    
+                    // Clear the form
+                    form.reset();
+                    
+                    // Reload after a short delay to show the toast
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1500);
+                } else {
+                    // Show error toast
+                    Toast.fire({
+                        icon: 'error',
+                        title: data.message || 'An error occurred.'
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                Toast.fire({
+                    icon: 'error',
+                    title: 'An error occurred. Please try again.'
+                });
+            })
+            .finally(() => {
+                // Re-enable the submit button
+                submitButton.disabled = false;
+                submitButton.innerHTML = '<i class="bi bi-plus-lg"></i> Add';
+            });
+            
+            return false;
+        }
+
+        // Handle todo completion toggle
+        document.querySelectorAll('.toggle-complete-btn').forEach(button => {
+            button.addEventListener('click', async function(e) {
+                e.preventDefault();
+                const form = this.closest('form');
+                const todoTitle = this.getAttribute('data-title') || 'this todo item';
+                const icon = this.querySelector('i');
+                
+                // Show loading state
+                const originalHtml = this.innerHTML;
+                this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+                this.disabled = true;
+                
+                try {
+                    const response = await fetch(form.action, {
+                        method: 'POST',
+                        body: new FormData(form),
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]').value
+                        }
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        // Update the button's data-title for the tooltip
+                        const newStatus = data.isCompleted ? 'Mark as incomplete' : 'Mark as complete';
+                        this.setAttribute('title', newStatus);
+                        this.setAttribute('data-original-title', newStatus);
+                        
+                        // Update the icon classes
+                        icon.className = data.isCompleted ? 
+                            'bi bi-check-circle-fill text-success' : 
+                            'bi bi-circle';
+                        
+                        // Update the button's icon for the tooltip
+                        this.querySelector('i').className = data.isCompleted ? 
+                            'bi bi-check-circle-fill text-success' : 
+                            'bi bi-circle';
+                        
+                        // Show success toast
+                        Toast.fire({
+                            icon: 'success',
+                            title: data.message || 'Todo status updated successfully!'
+                        });
+                        
+                        // Toggle completed class on the parent item
+                        const listItem = form.closest('.list-group-item');
+                        const titleElement = listItem.querySelector('h5');
+                        
+                        if (data.isCompleted) {
+                            listItem.classList.add('bg-light');
+                            titleElement.classList.add('text-muted', 'text-decoration-line-through');
+                        } else {
+                            listItem.classList.remove('bg-light');
+                            titleElement.classList.remove('text-muted', 'text-decoration-line-through');
+                        }
+                        
+                        // Update Bootstrap tooltip
+                        const tooltip = bootstrap.Tooltip.getInstance(this);
+                        if (tooltip) {
+                            tooltip.dispose();
+                            new bootstrap.Tooltip(this);
+                        }
+                    } else {
+                        // Show error toast
+                        Toast.fire({
+                            icon: 'error',
+                            title: data.message || 'Failed to update todo status.'
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    Toast.fire({
+                        icon: 'error',
+                        title: 'An error occurred. Please try again.'
+                    });
+                } finally {
+                    // Reset button state
+                    this.innerHTML = originalHtml;
+                    this.disabled = false;
+                }
+            });
+        });
+
+        // SweetAlert2 for delete confirmation
+        document.querySelectorAll('.delete-btn').forEach(button => {
+            button.addEventListener('click', function(e) {
+                e.preventDefault();
+                const form = this.closest('form');
+                const todoTitle = this.getAttribute('data-title') || 'this todo item';
+                
+                Swal.fire({
+                    title: 'Are you sure?',
+                    text: `You are about to delete "${todoTitle}". This action cannot be undone!`,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#3085d6',
+                    cancelButtonColor: '#d33',
+                    confirmButtonText: 'Yes, delete it!',
+                    cancelButtonText: 'Cancel',
+                    reverseButtons: true
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        form.submit();
+                    }
+                });
+            });
+        });
+    </script>
+}

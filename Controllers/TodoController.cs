@@ -72,7 +72,7 @@ namespace TodoApp.Controllers
                     Todos = todos?.Select(t => 
                     {
                         var user = t.UserId != null && users.TryGetValue(t.UserId, out var u) ? u : null;
-                        return new TodoViewModel
+                        return new TodoItemViewModel
                         {
                             Id = t.Id,
                             Title = t.Title ?? string.Empty,
@@ -83,7 +83,7 @@ namespace TodoApp.Controllers
                             AuthorName = user?.UserName,
                             AuthorEmail = user?.Email
                         };
-                    }) ?? Enumerable.Empty<TodoViewModel>(),
+                    }) ?? Enumerable.Empty<TodoItemViewModel>(),
                     ActiveCount = todos?.Count(t => !t.IsCompleted) ?? 0,
                     CompletedCount = todos?.Count(t => t.IsCompleted) ?? 0,
                     Filter = filter
@@ -318,7 +318,7 @@ namespace TodoApp.Controllers
                 _logger.LogWarning("User ID not found in claims");
                 return new TodoListViewModel
                 {
-                    Todos = Enumerable.Empty<TodoViewModel>(),
+                    Todos = Enumerable.Empty<TodoItemViewModel>(),
                     ActiveCount = 0,
                     CompletedCount = 0,
                     Filter = filter
@@ -326,18 +326,30 @@ namespace TodoApp.Controllers
             }
 
             var todos = await _todoRepository.GetUserTodosAsync(userId);
+            
+            // Get all user IDs from the todos
+            var userIds = todos?.Where(t => t.UserId != null).Select(t => t.UserId).Distinct().ToList();
+            var users = userIds?.Any() == true 
+                ? await _userManager.Users.Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u)
+                : new Dictionary<string, IdentityUser>();
 
             return new TodoListViewModel
             {
-                Todos = todos?.Select(t => new TodoViewModel
+                Todos = todos?.Select(t => 
                 {
-                    Id = t.Id,
-                    Title = t.Title ?? string.Empty,
-                    Description = t.Description,
-                    IsCompleted = t.IsCompleted,
-                    CreatedAt = t.CreatedAt,
-                    CompletedAt = t.CompletedAt
-                }) ?? Enumerable.Empty<TodoViewModel>(),
+                    var user = t.UserId != null && users.TryGetValue(t.UserId, out var u) ? u : null;
+                    return new TodoItemViewModel
+                    {
+                        Id = t.Id,
+                        Title = t.Title ?? string.Empty,
+                        Description = t.Description,
+                        IsCompleted = t.IsCompleted,
+                        CreatedAt = t.CreatedAt,
+                        CompletedAt = t.CompletedAt,
+                        AuthorName = user?.UserName,
+                        AuthorEmail = user?.Email
+                    };
+                }) ?? Enumerable.Empty<TodoItemViewModel>(),
                 ActiveCount = todos?.Count(t => !t.IsCompleted) ?? 0,
                 CompletedCount = todos?.Count(t => t.IsCompleted) ?? 0,
                 Filter = filter

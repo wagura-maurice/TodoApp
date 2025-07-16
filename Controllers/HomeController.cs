@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TodoApp.Models;
 
@@ -15,9 +16,15 @@ public class HomeController : Controller
 
     public IActionResult Index()
     {
+        // Redirect to Todo controller if user is authenticated
+        if (User.Identity?.IsAuthenticated == true)
+        {
+            return RedirectToAction("Index", "Todo");
+        }
         return View();
     }
 
+    [Authorize] // Only accessible to authenticated users
     public IActionResult Privacy()
     {
         return View();
@@ -27,5 +34,18 @@ public class HomeController : Controller
     public IActionResult Error()
     {
         return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
+    }
+
+    [Route("/error/{statusCode}")]
+    public IActionResult HandleError(int statusCode)
+    {
+        if (statusCode == 404)
+        {
+            return View("NotFound");
+        }
+        
+        return View("Error", new ErrorViewModel { 
+            RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier 
+        });
     }
 }

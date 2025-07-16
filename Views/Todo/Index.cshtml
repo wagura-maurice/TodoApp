@@ -1,4 +1,5 @@
-@model TodoApp.ViewModels.TodoListViewModel
+@using TodoApp.ViewModels
+@model TodoListViewModel
 
 @{
     ViewData["Title"] = "My Todo List";
@@ -144,246 +145,513 @@
 @section Scripts {
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script>
-        // Enable Bootstrap tooltips
-        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-            return new bootstrap.Tooltip(tooltipTriggerEl);
+        // Enable Bootstrap tooltips with null check
+        document.addEventListener('DOMContentLoaded', function() {
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+                if (tooltipTriggerEl) {
+                    return new bootstrap.Tooltip(tooltipTriggerEl);
+                }
+                return null;
+            }).filter(Boolean); // Remove any null entries
         });
 
         // Auto-focus the title input when the page loads
         document.addEventListener('DOMContentLoaded', function() {
-            const titleInput = document.querySelector('#NewTodoTitle');
-            if (titleInput) {
-                titleInput.focus();
-            }
+            try {
+                const titleInput = document.querySelector('#NewTodoTitle');
+                if (titleInput) {
+                    titleInput.focus();
+                }
 
-            // Clear any existing validation messages when the form is submitted
-            const form = document.querySelector('#todo-form');
-            if (form) {
-                form.addEventListener('submit', function() {
-                    const validationMessages = form.querySelectorAll('.field-validation-error');
-                    validationMessages.forEach(function(element) {
-                        element.textContent = '';
+                // Clear any existing validation messages when the form is submitted
+                const form = document.querySelector('#todo-form');
+                if (form) {
+                    form.addEventListener('submit', function() {
+                        const validationMessages = form.querySelectorAll('.field-validation-error');
+                        if (validationMessages && validationMessages.length > 0) {
+                            validationMessages.forEach(function(element) {
+                                if (element && element.textContent) {
+                                    element.textContent = '';
+                                }
+                            });
+                        }
                     });
-                });
+                }
+            } catch (error) {
+                console.error('Error in DOMContentLoaded handler:', error);
             }
         });
 
         // Handle escape key to clear input
         document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                const activeElement = document.activeElement;
-                if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
-                    activeElement.value = '';
+            try {
+                if (e.key === 'Escape') {
+                    const activeElement = document.activeElement;
+                    if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+                        activeElement.value = '';
+                    }
                 }
+            } catch (error) {
+                console.error('Error in keydown handler:', error);
             }
         });
 
-        // Initialize Toast
-        const Toast = Swal.mixin({
-            toast: true,
-            position: 'top-end',
-            showConfirmButton: false,
-            timer: 3000,
-            timerProgressBar: true,
-            didOpen: (toast) => {
-                toast.onmouseenter = Swal.stopTimer;
-                toast.onmouseleave = Swal.resumeTimer;
+        // Initialize Toast with error handling
+        let Toast;
+        try {
+            if (window.Swal) {
+                Toast = Swal.mixin({
+                    toast: true,
+                    position: 'top-end',
+                    showConfirmButton: false,
+                    timer: 3000,
+                    timerProgressBar: true,
+                    didOpen: (toast) => {
+                        try {
+                            if (toast) {
+                                toast.onmouseenter = Swal.stopTimer;
+                                toast.onmouseleave = Swal.resumeTimer;
+                            }
+                        } catch (e) {
+                            console.error('Error in Toast didOpen:', e);
+                        }
+                    }
+                });
+            } else {
+                console.warn('SweetAlert2 (Swal) is not loaded. Toasts will not work.');
+                // Fallback to console logging
+                Toast = {
+                    fire: function(options) {
+                        console.log('Toast:', options.title || options.text || 'Notification');
+                        return Promise.resolve({ isConfirmed: true });
+                    }
+                };
             }
-        });
+        } catch (e) {
+            console.error('Error initializing Toast:', e);
+            // Fallback to console logging if Toast initialization fails
+            Toast = {
+                fire: function(options) {
+                    console.log('Toast (fallback):', options.title || options.text || 'Notification');
+                    return Promise.resolve({ isConfirmed: true });
+                }
+            };
+        }
 
         // Show success/error message from TempData if exists
-        @if (hasSuccessMessage)
-        {
-            <text>
-            Toast.fire({
-                icon: 'success',
-                title: '@Html.Raw(TempData["SuccessMessage"])'
-            });
-            </text>
-        }
-        else if (hasErrorMessage)
-        {
-            <text>
-            Toast.fire({
-                icon: 'error',
-                title: '@Html.Raw(TempData["ErrorMessage"])'
-            });
-            </text>
+        try {
+            @if (hasSuccessMessage)
+            {
+                <text>
+                if (Toast) {
+                    try {
+                        Toast.fire({
+                            icon: 'success',
+                            title: '@Html.Raw(TempData["SuccessMessage"])'
+                        });
+                    } catch (e) {
+                        console.error('Error showing success toast:', e);
+                    }
+                } else {
+                    console.log('Success:', '@Html.Raw(TempData["SuccessMessage"])');
+                }
+                </text>
+            }
+            else if (hasErrorMessage)
+            {
+                <text>
+                if (Toast) {
+                    try {
+                        Toast.fire({
+                            icon: 'error',
+                            title: '@Html.Raw(TempData["ErrorMessage"])'
+                        });
+                    } catch (e) {
+                        console.error('Error showing error toast:', e);
+                    }
+                } else {
+                    console.error('Error:', '@Html.Raw(TempData["ErrorMessage"])');
+                }
+                </text>
+            }
+        } catch (e) {
+            console.error('Error processing TempData messages:', e);
         }
 
         // Handle todo form submission with AJAX
         function submitTodoForm(event) {
-            event.preventDefault();
-            const form = event.target;
-            const formData = new FormData(form);
-            const submitButton = form.querySelector('button[type="submit"]');
-            
-            // Disable the submit button to prevent double submission
-            submitButton.disabled = true;
-            submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Adding...';
-            
-            fetch(form.action, {
-                method: 'POST',
-                body: formData,
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]').value
+            try {
+                event.preventDefault();
+                const form = event.target;
+                if (!form || !form.action) {
+                    console.error('Form is invalid');
+                    return false;
                 }
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Network response was not ok');
+                
+                const formData = new FormData(form);
+                const submitButton = form.querySelector('button[type="submit"]');
+                if (!submitButton) {
+                    console.error('Submit button not found');
+                    return false;
                 }
-                return response.json();
-            })
-            .then(data => {
-                if (data.success) {
-                    // Show success toast
-                    Toast.fire({
-                        icon: 'success',
-                        title: data.message || 'Todo added successfully!'
-                    });
+                
+                const tokenElement = document.querySelector('input[name="__RequestVerificationToken"]');
+                if (!tokenElement) {
+                    console.error('Anti-forgery token not found');
+                    return false;
+                }
+                
+                // Disable the submit button to prevent double submission
+                const originalButtonText = submitButton.innerHTML;
+                submitButton.disabled = true;
+                submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Adding...';
+                
+                fetch(form.action, {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'RequestVerificationToken': tokenElement.value
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (!data) {
+                        throw new Error('No data received from server');
+                    }
                     
-                    // Clear the form
-                    form.reset();
+                    if (data.success) {
+                        // Show success toast
+                        if (window.Swal) {
+                            Swal.fire({
+                                toast: true,
+                                position: 'top-end',
+                                icon: 'success',
+                                title: data.message || 'Todo added successfully!',
+                                showConfirmButton: false,
+                                timer: 3000
+                            });
+                        }
+                        
+                        // Clear the form
+                        form.reset();
+                        
+                        // Reload after a short delay to show the toast
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 1500);
+                    } else {
+                        // Show error toast
+                        const errorMsg = data.message || 'An error occurred.';
+                        console.error('Server error:', errorMsg);
+                        
+                        if (window.Swal) {
+                            Swal.fire({
+                                toast: true,
+                                position: 'top-end',
+                                icon: 'error',
+                                title: errorMsg,
+                                showConfirmButton: false,
+                                timer: 5000
+                            });
+                        } else {
+                            alert(errorMsg);
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    const errorMsg = error instanceof Error ? error.message : 'An unknown error occurred';
                     
-                    // Reload after a short delay to show the toast
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 1500);
-                } else {
-                    // Show error toast
-                    Toast.fire({
-                        icon: 'error',
-                        title: data.message || 'An error occurred.'
-                    });
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                Toast.fire({
-                    icon: 'error',
-                    title: 'An error occurred. Please try again.'
+                    if (window.Swal) {
+                        Swal.fire({
+                            toast: true,
+                            position: 'top-end',
+                            icon: 'error',
+                            title: `Error: ${errorMsg}`,
+                            showConfirmButton: false,
+                            timer: 5000
+                        });
+                    } else {
+                        alert(`Error: ${errorMsg}`);
+                    }
+                })
+                .finally(() => {
+                    // Re-enable the submit button
+                    if (submitButton) {
+                        submitButton.disabled = false;
+                        submitButton.innerHTML = originalButtonText;
+                    }
                 });
-            })
-            .finally(() => {
-                // Re-enable the submit button
-                submitButton.disabled = false;
-                submitButton.innerHTML = '<i class="bi bi-plus-lg"></i> Add';
-            });
-            
-            return false;
+                
+                return false;
+            } catch (error) {
+                console.error('Error in submitTodoForm:', error);
+                if (window.Swal) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'An error occurred',
+                        text: error.message || 'Please try again.'
+                    });
+                } else {
+                    alert('An error occurred: ' + (error.message || 'Please try again.'));
+                }
+                return false;
+            }
         }
 
-        // Handle todo completion toggle
-        document.querySelectorAll('.toggle-complete-btn').forEach(button => {
-            button.addEventListener('click', async function(e) {
-                e.preventDefault();
-                const form = this.closest('form');
-                const todoTitle = this.getAttribute('data-title') || 'this todo item';
-                const icon = this.querySelector('i');
+        // Function to initialize toggle buttons
+        function initializeToggleButtons() {
+            const toggleButtons = document.querySelectorAll('.toggle-complete-btn');
+            if (!toggleButtons || toggleButtons.length === 0) return;
+            
+            toggleButtons.forEach(button => {
+                if (!button) return;
                 
-                // Show loading state
-                const originalHtml = this.innerHTML;
-                this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
-                this.disabled = true;
+                // Remove any existing event listeners to prevent duplicates
+                const newButton = button.cloneNode(true);
+                button.parentNode.replaceChild(newButton, button);
+                
+                newButton.addEventListener('click', async function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    const form = this.closest('form');
+                    if (!form || !form.action) {
+                        console.error('Form is invalid');
+                        return;
+                    }
+                    
+                    const todoTitle = this.getAttribute('data-title') || 'this todo item';
+                    const icon = this.querySelector('i');
+                    
+                    // Store original state for potential rollback
+                    const originalHtml = this.innerHTML;
+                    const originalIconClass = icon ? icon.className : '';
+                    const todoItem = this.closest('.list-group-item');
+                    const titleElement = todoItem ? todoItem.querySelector('h5') : null;
+                    const wasCompleted = todoItem ? todoItem.classList.contains('completed') : false;
+                    
+                    // Immediately update the UI for instant feedback
+                    if (icon) {
+                        icon.className = wasCompleted ? 'bi bi-circle' : 'bi bi-check-circle-fill text-success';
+                    }
+                    if (titleElement) {
+                        if (wasCompleted) {
+                            titleElement.classList.remove('text-muted', 'text-decoration-line-through');
+                        } else {
+                            titleElement.classList.add('text-muted', 'text-decoration-line-through');
+                        }
+                    }
+                    if (todoItem) {
+                        todoItem.classList.toggle('completed', !wasCompleted);
+                    }
+                    
+                    // Show loading state
+                    this.disabled = true;
                 
                 try {
+                    const tokenElement = document.querySelector('input[name="__RequestVerificationToken"]');
+                    if (!tokenElement) {
+                        throw new Error('Anti-forgery token not found');
+                    }
+
                     const response = await fetch(form.action, {
                         method: 'POST',
                         body: new FormData(form),
                         headers: {
                             'X-Requested-With': 'XMLHttpRequest',
-                            'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]').value
+                            'RequestVerificationToken': tokenElement.value
                         }
                     });
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
                     
                     const data = await response.json();
                     
+                    if (!data) {
+                        throw new Error('Empty response from server');
+                    }
+                    
                     if (data.success) {
-                        // Update the button's data-title for the tooltip
-                        const newStatus = data.isCompleted ? 'Mark as incomplete' : 'Mark as complete';
-                        this.setAttribute('title', newStatus);
-                        this.setAttribute('data-original-title', newStatus);
-                        
-                        // Update the icon classes
-                        icon.className = data.isCompleted ? 
-                            'bi bi-check-circle-fill text-success' : 
-                            'bi bi-circle';
-                        
-                        // Update the button's icon for the tooltip
-                        this.querySelector('i').className = data.isCompleted ? 
-                            'bi bi-check-circle-fill text-success' : 
-                            'bi bi-circle';
-                        
-                        // Show success toast
-                        Toast.fire({
-                            icon: 'success',
-                            title: data.message || 'Todo status updated successfully!'
-                        });
-                        
-                        // Toggle completed class on the parent item
-                        const listItem = form.closest('.list-group-item');
-                        const titleElement = listItem.querySelector('h5');
-                        
-                        if (data.isCompleted) {
-                            listItem.classList.add('bg-light');
-                            titleElement.classList.add('text-muted', 'text-decoration-line-through');
-                        } else {
-                            listItem.classList.remove('bg-light');
-                            titleElement.classList.remove('text-muted', 'text-decoration-line-through');
-                        }
-                        
-                        // Update Bootstrap tooltip
-                        const tooltip = bootstrap.Tooltip.getInstance(this);
-                        if (tooltip) {
-                            tooltip.dispose();
-                            new bootstrap.Tooltip(this);
+                        // Update the UI to reflect the new completion state
+                        const todoItem = this.closest('.list-group-item');
+                        if (todoItem) {
+                            // Toggle completed class
+                            todoItem.classList.toggle('completed', data.isCompleted);
+                            
+                            // Update the status text and icon
+                            const statusText = data.isCompleted ? 'Mark as incomplete' : 'Mark as complete';
+                            this.setAttribute('title', statusText);
+                            this.setAttribute('data-original-title', statusText);
+                            
+                            // Update the icon
+                            if (icon) {
+                                icon.className = data.isCompleted ? 
+                                    'bi bi-check-circle-fill text-success' : 
+                                    'bi bi-circle';
+                            }
+                            
+                            // Update the title styling
+                            const titleElement = todoItem.querySelector('h5');
+                            if (titleElement) {
+                                if (data.isCompleted) {
+                                    titleElement.classList.add('text-muted', 'text-decoration-line-through');
+                                } else {
+                                    titleElement.classList.remove('text-muted', 'text-decoration-line-through');
+                                }
+                            }
+                            
+                            // Show success message
+                            if (window.Swal) {
+                                try {
+                                    Swal.fire({
+                                        toast: true,
+                                        position: 'top-end',
+                                        icon: 'success',
+                                        title: data.message || 'Todo updated successfully!',
+                                        showConfirmButton: false,
+                                        timer: 3000
+                                    });
+                                } catch (e) {
+                                    console.error('Error showing success toast:', e);
+                                }
+                            }
+                            
+                            // Update Bootstrap tooltip if it exists
+                            if (typeof bootstrap !== 'undefined') {
+                                const tooltip = bootstrap.Tooltip.getInstance(this);
+                                if (tooltip) {
+                                    tooltip.dispose();
+                                    new bootstrap.Tooltip(this);
+                                }
+                            }
                         }
                     } else {
-                        // Show error toast
-                        Toast.fire({
-                            icon: 'error',
-                            title: data.message || 'Failed to update todo status.'
-                        });
+                        // Show error message
+                        const errorMsg = data.message || 'Failed to update todo status.';
+                        console.error('Server error:', errorMsg);
+                        if (window.Swal) {
+                            try {
+                                Swal.fire({
+                                    toast: true,
+                                    position: 'top-end',
+                                    icon: 'error',
+                                    title: errorMsg,
+                                    showConfirmButton: false,
+                                    timer: 5000
+                                });
+                            } catch (e) {
+                                console.error('Error showing error toast:', e);
+                            }
+                        } else {
+                            alert(errorMsg);
+                        }
                     }
                 } catch (error) {
                     console.error('Error:', error);
-                    Toast.fire({
-                        icon: 'error',
-                        title: 'An error occurred. Please try again.'
-                    });
+                    const errorMsg = error instanceof Error ? error.message : 'An unknown error occurred';
+                    
+                    // Revert UI changes on error
+                    if (icon) icon.className = originalIconClass || 'bi bi-circle';
+                    if (titleElement) {
+                        if (wasCompleted) {
+                            titleElement.classList.add('text-muted', 'text-decoration-line-through');
+                        } else {
+                            titleElement.classList.remove('text-muted', 'text-decoration-line-through');
+                        }
+                    }
+                    if (todoItem) {
+                        todoItem.classList.toggle('completed', wasCompleted);
+                    }
+                    
+                    // Show error message
+                    if (Toast) {
+                        try {
+                            Toast.fire({
+                                icon: 'error',
+                                title: `Error: ${errorMsg}`
+                            });
+                        } catch (e) {
+                            console.error('Error showing error toast:', e);
+                        }
+                    } else {
+                        alert(`Error: ${errorMsg}`);
+                    }
                 } finally {
-                    // Reset button state
-                    this.innerHTML = originalHtml;
-                    this.disabled = false;
+                    try {
+                        // Restore button state
+                        if (this) {
+                            this.innerHTML = originalHtml;
+                            this.disabled = false;
+                        }
+                    } catch (restoreError) {
+                        console.error('Error restoring button state:', restoreError);
+                    }
                 }
             });
-        });
+            });
+        }
 
-        // SweetAlert2 for delete confirmation
-        document.querySelectorAll('.delete-btn').forEach(button => {
-            button.addEventListener('click', function(e) {
-                e.preventDefault();
-                const form = this.closest('form');
-                const todoTitle = this.getAttribute('data-title') || 'this todo item';
+        // Function to initialize delete buttons
+        function initializeDeleteButtons() {
+            const deleteButtons = document.querySelectorAll('.delete-btn');
+            if (!deleteButtons || deleteButtons.length === 0) return;
+            
+            deleteButtons.forEach(button => {
+                if (!button) return;
                 
-                Swal.fire({
-                    title: 'Are you sure?',
-                    text: `You are about to delete "${todoTitle}". This action cannot be undone!`,
-                    icon: 'warning',
-                    showCancelButton: true,
-                    confirmButtonColor: '#3085d6',
-                    cancelButtonColor: '#d33',
-                    confirmButtonText: 'Yes, delete it!',
-                    cancelButtonText: 'Cancel',
-                    reverseButtons: true
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        form.submit();
+                // Remove any existing event listeners to prevent duplicates
+                const newButton = button.cloneNode(true);
+                button.parentNode.replaceChild(newButton, button);
+                
+                newButton.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    const form = this.closest('form');
+                    const todoTitle = this.getAttribute('data-title') || 'this todo item';
+                    
+                    if (window.Swal) {
+                        Swal.fire({
+                            title: 'Are you sure?',
+                            text: `You are about to delete "${todoTitle}". This action cannot be undone!`,
+                            icon: 'warning',
+                            showCancelButton: true,
+                            confirmButtonColor: '#3085d6',
+                            cancelButtonColor: '#d33',
+                            confirmButtonText: 'Yes, delete it!',
+                            cancelButtonText: 'Cancel',
+                            reverseButtons: true
+                        }).then((result) => {
+                            if (result.isConfirmed && form) {
+                                form.submit();
+                            }
+                        });
+                    } else if (confirm(`Are you sure you want to delete "${todoTitle}"?`)) {
+                        form?.submit();
                     }
                 });
+            });
+        }
+        
+        // Initialize all event listeners when the DOM is fully loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeToggleButtons();
+            initializeDeleteButtons();
+            
+            // Re-initialize buttons after AJAX operations
+            document.addEventListener('todoListUpdated', function() {
+                initializeToggleButtons();
+                initializeDeleteButtons();
             });
         });
     </script>

@@ -462,6 +462,9 @@
                         throw new Error('Anti-forgery token not found');
                     }
 
+                    // Store the current state for potential rollback
+                    const currentState = !wasCompleted;
+                    
                     const response = await fetch(form.action, {
                         method: 'POST',
                         body: new FormData(form),
@@ -482,47 +485,38 @@
                     }
                     
                     if (data.success) {
-                        // Update the UI to reflect the new completion state
+                        // Only update tooltip and other non-state related UI elements
                         const todoItem = this.closest('.list-group-item');
                         if (todoItem) {
-                            // Toggle completed class
-                            todoItem.classList.toggle('completed', data.isCompleted);
-                            
-                            // Update the status text and icon
+                            // Update the status text
                             const statusText = data.isCompleted ? 'Mark as incomplete' : 'Mark as complete';
                             this.setAttribute('title', statusText);
                             this.setAttribute('data-original-title', statusText);
                             
-                            // Update the icon
-                            if (icon) {
-                                icon.className = data.isCompleted ? 
-                                    'bi bi-check-circle-fill text-success' : 
-                                    'bi bi-circle';
-                            }
-                            
-                            // Update the title styling
-                            const titleElement = todoItem.querySelector('h5');
-                            if (titleElement) {
-                                if (data.isCompleted) {
-                                    titleElement.classList.add('text-muted', 'text-decoration-line-through');
-                                } else {
-                                    titleElement.classList.remove('text-muted', 'text-decoration-line-through');
+                            // Update Bootstrap tooltip if it exists
+                            if (typeof bootstrap !== 'undefined') {
+                                const tooltip = bootstrap.Tooltip.getInstance(this);
+                                if (tooltip) {
+                                    tooltip.dispose();
+                                    new bootstrap.Tooltip(this);
                                 }
                             }
                             
-                            // Show success message
-                            if (window.Swal) {
-                                try {
-                                    Swal.fire({
-                                        toast: true,
-                                        position: 'top-end',
-                                        icon: 'success',
-                                        title: data.message || 'Todo updated successfully!',
-                                        showConfirmButton: false,
-                                        timer: 3000
-                                    });
-                                } catch (e) {
-                                    console.error('Error showing success toast:', e);
+                            // Show success message (only if state changed)
+                            if (currentState !== data.isCompleted) {
+                                if (window.Swal) {
+                                    try {
+                                        Swal.fire({
+                                            toast: true,
+                                            position: 'top-end',
+                                            icon: 'success',
+                                            title: data.message || 'Todo updated successfully!',
+                                            showConfirmButton: false,
+                                            timer: 3000
+                                        });
+                                    } catch (e) {
+                                        console.error('Error showing success toast:', e);
+                                    }
                                 }
                             }
                             

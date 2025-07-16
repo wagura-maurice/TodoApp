@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.Reflection;
 
 namespace TodoApp.ViewModels
 {
@@ -33,9 +34,30 @@ namespace TodoApp.ViewModels
             : !string.IsNullOrEmpty(AuthorName) && AuthorName.Length > 0 ? AuthorName[0].ToString() : "?";
     }
 
+    public class TodoItemViewModel
+    {
+        public int Id { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public bool IsCompleted { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime? CompletedAt { get; set; }
+        public string? AuthorName { get; set; }
+        public string? AuthorEmail { get; set; }
+        
+        // Computed properties
+        public string StatusClass => IsCompleted ? "completed" : "";
+        public string StatusIcon => IsCompleted ? "bi-check-circle-fill text-success" : "bi-circle";
+        public string CreatedAtFormatted => CreatedAt.ToString("g");
+        public string? CompletedAtFormatted => CompletedAt?.ToString("g");
+        public string AuthorInitials => !string.IsNullOrEmpty(AuthorName) && AuthorName.Contains(' ') 
+            ? $"{AuthorName.Split(' ')[0][0]}{AuthorName.Split(' ')[1][0]}" 
+            : !string.IsNullOrEmpty(AuthorName) && AuthorName.Length > 0 ? AuthorName[0].ToString() : "?";
+    }
+
     public class TodoListViewModel
     {
-        public IEnumerable<TodoViewModel> Todos { get; set; } = new List<TodoViewModel>();
+        public IEnumerable<TodoItemViewModel> Todos { get; set; } = new List<TodoItemViewModel>();
         public int ActiveCount { get; set; }
         public int CompletedCount { get; set; }
         public string? Filter { get; set; }

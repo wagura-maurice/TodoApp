@@ -1,0 +1,115 @@
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+using TodoApp.Interfaces;
+using TodoApp.Models;
+
+namespace TodoApp.Data
+{
+    public class TodoRepository : ITodoRepository
+    {
+        private readonly ApplicationDbContext _context;
+
+        public TodoRepository(ApplicationDbContext context)
+        {
+            _context = context;
+        }
+
+        public async Task<IEnumerable<TodoItem>> GetUserTodosAsync(string userId, bool? isCompleted = null)
+        {
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Enumerable.Empty<TodoItem>();
+            }
+
+            try
+            {
+                var query = _context.TodoItems
+                    .Include(t => t.User)
+                    .Where(t => t.UserId == userId);
+                    
+                if (isCompleted.HasValue)
+                {
+                    query = query.Where(t => t.IsCompleted == isCompleted.Value);
+                }
+                
+                return await query
+                    .OrderByDescending(t => t.CreatedAt)
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Log the error (you might want to inject an ILogger in the constructor)
+                Console.WriteLine($"Error retrieving todos for user {userId}: {ex.Message}");
+                return Enumerable.Empty<TodoItem>();
+            }
+        }
+
+        public async Task<TodoItem?> GetTodoByIdAsync(int id, string userId)
+        {
+            if (string.IsNullOrEmpty(userId))
+            {
+                return null;
+            }
+
+            try
+            {
+                return await _context.TodoItems
+                    .Include(t => t.User)
+                    .FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Log the error (you might want to inject an ILogger in the constructor)
+                Console.WriteLine($"Error retrieving todo {id} for user {userId}: {ex.Message}");
+                return null;
+            }
+        }
+
+        public async Task AddTodoAsync(TodoItem todo)
+        {
+            if (todo == null)
+            {
+                throw new ArgumentNullException(nameof(todo));
+            }
+
+            await _context.TodoItems.AddAsync(todo).ConfigureAwait(false);
+        }
+
+        public async Task UpdateTodoAsync(TodoItem todo)
+        {
+            if (todo == null)
+            {
+                throw new ArgumentNullException(nameof(todo));
+            }
+
+            _context.Entry(todo).State = EntityState.Modified;
+            await Task.CompletedTask; // Make the method truly async
+        }
+
+        public async Task DeleteTodoAsync(int id, string userId)
+        {
+            var todo = await GetTodoByIdAsync(id, userId);
+            if (todo != null)
+            {
+                _context.TodoItems.Remove(todo);
+            }
+        }
+
+        public async Task<bool> SaveChangesAsync()
+        {
+            try
+            {
+                var result = await _context.SaveChangesAsync().ConfigureAwait(false);
+                return result > 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error saving changes: {ex.Message}");
+                return false;
+            }
+        }
+    }
+}

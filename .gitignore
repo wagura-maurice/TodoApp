@@ -678,3 +678,6 @@ FodyWeavers.xsd
 
 # "object" (build artifacts, intermediate files)
 obj/
+
+app.db-shm
+app.db-wal

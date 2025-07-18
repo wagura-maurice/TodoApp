@@ -4,6 +4,16 @@ using System.ComponentModel.DataAnnotations;
 
 namespace TodoApp.ViewModels
 {
+    public class PaginationInfo
+    {
+        public int CurrentPage { get; set; }
+        public int PageSize { get; set; }
+        public int TotalItems { get; set; }
+        public int TotalPages { get; set; }
+        public bool HasPreviousPage => CurrentPage > 1;
+        public bool HasNextPage => CurrentPage < TotalPages;
+    }
+
     public class TodoViewModel
     {
         public int Id { get; set; }
@@ -60,6 +70,7 @@ namespace TodoApp.ViewModels
         public int ActiveCount { get; set; }
         public int CompletedCount { get; set; }
         public string? Filter { get; set; }
+        public PaginationInfo Pagination { get; set; } = new PaginationInfo();
         
         [Display(Name = "Title")]
         [Required(ErrorMessage = "Title is required")]

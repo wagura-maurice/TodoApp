@@ -15,7 +15,7 @@ namespace TodoApp.Data
             _context = context;
         }
 
-        public async Task<IEnumerable<TodoItem>> GetUserTodosAsync(string userId, bool? isCompleted = null)
+        public async Task<IEnumerable<TodoItem>> GetUserTodosAsync(string userId, bool? isCompleted = null, int page = 1, int pageSize = 10)
         {
             if (string.IsNullOrEmpty(userId))
             {
@@ -35,6 +35,8 @@ namespace TodoApp.Data
                 
                 return await query
                     .OrderByDescending(t => t.CreatedAt)
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
                     .ToListAsync()
                     .ConfigureAwait(false);
             }
@@ -43,6 +45,32 @@ namespace TodoApp.Data
                 // Log the error (you might want to inject an ILogger in the constructor)
                 Console.WriteLine($"Error retrieving todos for user {userId}: {ex.Message}");
                 return Enumerable.Empty<TodoItem>();
+            }
+        }
+        
+        public async Task<int> GetUserTodosCountAsync(string userId, bool? isCompleted = null)
+        {
+            if (string.IsNullOrEmpty(userId))
+            {
+                return 0;
+            }
+
+            try
+            {
+                var query = _context.TodoItems
+                    .Where(t => t.UserId == userId);
+                    
+                if (isCompleted.HasValue)
+                {
+                    query = query.Where(t => t.IsCompleted == isCompleted.Value);
+                }
+                
+                return await query.CountAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error counting todos for user {userId}: {ex.Message}");
+                return 0;
             }
         }
 

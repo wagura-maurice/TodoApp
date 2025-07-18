@@ -15,6 +15,7 @@ namespace TodoApp.Middleware
     {
         private readonly RequestDelegate _next;
         private readonly ILogger<ExceptionHandlingMiddleware> _logger;
+        private readonly IWebHostEnvironment _env;
         private readonly bool _isDevelopment;
 
         public ExceptionHandlingMiddleware(
@@ -24,6 +25,7 @@ namespace TodoApp.Middleware
         {
             _next = next;
             _logger = logger;
+            _env = env;
             _isDevelopment = env.IsDevelopment();
         }
 
@@ -41,14 +43,46 @@ namespace TodoApp.Middleware
 
         private async Task HandleExceptionAsync(HttpContext context, Exception exception)
         {
-            context.Response.ContentType = "application/json";
-            var response = context.Response;
+            var isAjax = context.Request.Headers["X-Requested-With"] == "XMLHttpRequest" || 
+                        (context.Request.Headers.TryGetValue("Content-Type", out var contentType) && 
+                         contentType.ToString().Contains("application/json"));
+            
             var errorId = Activity.Current?.Id ?? context.TraceIdentifier;
             
             // Log the exception
             _logger.LogError(exception, "An unhandled exception has occurred. Request ID: {RequestId}", errorId);
 
-            // Default error details
+            // For AJAX requests, return JSON response
+            if (isAjax || context.Request.Path.StartsWithSegments("/api"))
+            {
+                context.Response.ContentType = "application/json";
+                
+                var errorResponse = new
+                {
+                    success = false,
+                    message = "An error occurred while processing your request.",
+                    error = _isDevelopment ? exception.Message : null,
+                    requestId = errorId,
+                    stackTrace = _isDevelopment ? exception.StackTrace : null
+                };
+
+                // Set status code based on exception type
+                context.Response.StatusCode = exception switch
+                {
+                    UnauthorizedAccessException _ => StatusCodes.Status401Unauthorized,
+                    KeyNotFoundException _ => StatusCodes.Status404NotFound,
+                    InvalidOperationException _ => StatusCodes.Status400BadRequest,
+                    ArgumentException _ => StatusCodes.Status400BadRequest,
+                    _ => StatusCodes.Status500InternalServerError
+                };
+
+                await context.Response.WriteAsJsonAsync(errorResponse);
+                return;
+            }
+
+            // For non-AJAX requests, use ProblemDetails
+            context.Response.ContentType = "application/json";
+            
             var problemDetails = new ProblemDetails
             {
                 Type = "https://tools.ietf.org/html/rfc7231#section-6.6.1",
@@ -88,7 +122,7 @@ namespace TodoApp.Middleware
             }
 
             // Set the HTTP status code
-            response.StatusCode = problemDetails.Status.Value;
+            context.Response.StatusCode = problemDetails.Status.Value;
 
             // Add exception details in development
             if (_isDevelopment)
@@ -104,7 +138,7 @@ namespace TodoApp.Middleware
                 WriteIndented = true
             });
 
-            await response.WriteAsync(result);
+            await context.Response.WriteAsync(result);
         }
     }
 

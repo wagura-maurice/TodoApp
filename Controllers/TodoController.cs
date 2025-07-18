@@ -22,17 +22,38 @@ namespace TodoApp.Controllers
         private readonly ILogger<TodoController> _logger;
         private readonly UserManager<IdentityUser> _userManager;
         private readonly ApplicationDbContext _context;
+        private readonly IWebHostEnvironment _env;
 
         public TodoController(
             ITodoRepository todoRepository, 
             ILogger<TodoController> logger,
             UserManager<IdentityUser> userManager,
-            ApplicationDbContext context)
+            ApplicationDbContext context,
+            IWebHostEnvironment env)
         {
             _todoRepository = todoRepository;
             _logger = logger;
             _userManager = userManager;
             _context = context;
+            _env = env;
+            
+            // Log the TodoListViewModel properties for debugging
+            var todoListType = typeof(TodoListViewModel);
+            _logger.LogInformation("TodoListViewModel properties:");
+            foreach (var prop in todoListType.GetProperties())
+            {
+                _logger.LogInformation($"- {prop.Name} : {prop.PropertyType.Name}");
+            }
+            
+            var paginationProp = todoListType.GetProperty("Pagination");
+            _logger.LogInformation("\nPagination property found: " + (paginationProp != null ? "Yes" : "No"));
+            
+            if (paginationProp != null)
+            {
+                _logger.LogInformation($"Pagination type: {paginationProp.PropertyType.FullName}");
+                _logger.LogInformation($"Can read: {paginationProp.CanRead}");
+                _logger.LogInformation($"Can write: {paginationProp.CanWrite}");
+            }
         }
 
         private string? GetCurrentUserId()
@@ -40,7 +61,34 @@ namespace TodoApp.Controllers
             return User?.FindFirstValue(ClaimTypes.NameIdentifier);
         }
 
-        public async Task<IActionResult> Index(string? filter = null)
+        [Route("/debug/todolistviewmodel")]
+        [AllowAnonymous]
+        public IActionResult DebugTodoListViewModel()
+        {
+            var model = new TodoListViewModel();
+            model.Pagination = new PaginationInfo
+            {
+                CurrentPage = 1,
+                PageSize = 10,
+                TotalItems = 100,
+                TotalPages = 10
+            };
+            
+            return Json(new 
+            {
+                PaginationPropertyExists = model.Pagination != null,
+                PaginationType = model.Pagination?.GetType().FullName,
+                Properties = model.GetType().GetProperties().Select(p => new 
+                {
+                    Name = p.Name,
+                    Type = p.PropertyType.Name,
+                    CanRead = p.CanRead,
+                    CanWrite = p.CanWrite
+                })
+            });
+        }
+        
+        public async Task<IActionResult> Index(string? filter = null, int page = 1, int pageSize = 5)
         {
             try
             {
@@ -50,16 +98,35 @@ namespace TodoApp.Controllers
                     _logger.LogWarning("User ID not found in claims");
                     return RedirectToPage("/Account/Login", new { area = "Identity" });
                 }
+
+                // Ensure page size is one of the allowed values (5, 10, 20, 50, 100)
+                var allowedPageSizes = new[] { 5, 10, 20, 50, 100 };
+                if (!allowedPageSizes.Contains(pageSize))
+                {
+                    pageSize = 5; // Default to 5 if an invalid page size is provided
+                }
+
+                // Get counts for all, active, and completed todos
+                var activeCount = await _todoRepository.GetUserTodosCountAsync(userId, false);
+                var completedCount = await _todoRepository.GetUserTodosCountAsync(userId, true);
                 
-                // Apply filter if provided
-                var todos = string.IsNullOrEmpty(filter) 
-                    ? await _todoRepository.GetUserTodosAsync(userId)
-                    : filter.ToLower() switch
-                    {
-                        "active" => await _todoRepository.GetUserTodosAsync(userId, false),
-                        "completed" => await _todoRepository.GetUserTodosAsync(userId, true),
-                        _ => await _todoRepository.GetUserTodosAsync(userId)
-                    };
+                // Get filtered todos with pagination
+                bool? isCompleted = filter?.ToLower() switch
+                {
+                    "active" => false,
+                    "completed" => true,
+                    _ => null
+                };
+
+                // Get todos for the current page
+                var todos = await _todoRepository.GetUserTodosAsync(userId, isCompleted, page, pageSize);
+                
+                // Get total count for the current filter
+                var totalItems = await _todoRepository.GetUserTodosCountAsync(userId, isCompleted);
+                
+                // Calculate total pages and ensure page is within valid range
+                int totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
+                page = Math.Max(1, Math.Min(page, totalPages > 0 ? totalPages : 1));
 
                 // Get all user IDs from the todos
                 var userIds = todos?.Where(t => t.UserId != null).Select(t => t.UserId).Distinct().ToList();
@@ -84,9 +151,16 @@ namespace TodoApp.Controllers
                             AuthorEmail = user?.Email
                         };
                     }) ?? Enumerable.Empty<TodoItemViewModel>(),
-                    ActiveCount = todos?.Count(t => !t.IsCompleted) ?? 0,
-                    CompletedCount = todos?.Count(t => t.IsCompleted) ?? 0,
-                    Filter = filter
+                    ActiveCount = activeCount,
+                    CompletedCount = completedCount,
+                    Filter = filter,
+                    Pagination = new PaginationInfo
+                    {
+                        CurrentPage = page,
+                        PageSize = pageSize,
+                        TotalItems = totalItems,
+                        TotalPages = totalPages > 0 ? totalPages : 1
+                    }
                 };
 
                 return View(viewModel);
@@ -154,10 +228,14 @@ namespace TodoApp.Controllers
 
                     if (Request.Headers["X-Requested-With"] == "XMLHttpRequest")
                     {
-                        return Json(new { success = true, message = "Todo added successfully!" });
+                        return Json(new { 
+                            success = true, 
+                            message = $"Todo #{todo.Id} added successfully!",
+                            todoId = todo.Id
+                        });
                     }
                     
-                    TempData["SuccessMessage"] = "Todo item added successfully!";
+                    TempData["SuccessMessage"] = $"Todo item #{todo.Id} added successfully!";
                     return RedirectToAction(nameof(Index));
                 }
                 catch (Exception ex)
@@ -250,35 +328,67 @@ namespace TodoApp.Controllers
         }
 
         [HttpPost]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Delete(int id)
+[ValidateAntiForgeryToken]
+[Produces("application/json")]
+public async Task<IActionResult> Delete(int id)
+{
+    // Set response type to JSON
+    Response.ContentType = "application/json";
+    
+    try
+    {
+        var userId = GetCurrentUserId();
+        if (string.IsNullOrEmpty(userId))
         {
-            try
-            {
-                var userId = GetCurrentUserId();
-                if (string.IsNullOrEmpty(userId))
-                {
-                    _logger.LogWarning("User ID not found in claims");
-                    return RedirectToPage("/Account/Login", new { area = "Identity" });
-                }
-
-                await _todoRepository.DeleteTodoAsync(id, userId);
-                await _todoRepository.SaveChangesAsync();
-                
-                TempData["SuccessMessage"] = "Todo item deleted successfully!";
-                return RedirectToAction(nameof(Index));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error deleting todo item {TodoId}", id);
-                TempData["ErrorMessage"] = "An error occurred while deleting the todo item.";
-                return RedirectToAction(nameof(Index));
-            }
+            _logger.LogWarning("User ID not found in claims");
+            Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return Json(new { 
+                success = false, 
+                message = "Your session has expired. Please log in again.",
+                requiresLogin = true
+            });
         }
+
+        _logger.LogInformation("Attempting to delete todo {TodoId} for user {UserId}", id, userId);
+        
+        var todo = await _todoRepository.GetTodoByIdAsync(id, userId);
+        if (todo == null)
+        {
+            _logger.LogWarning("Todo item {TodoId} not found for user {UserId}", id, userId);
+            Response.StatusCode = StatusCodes.Status404NotFound;
+            return Json(new { 
+                success = false, 
+                message = "The todo item was not found or has already been deleted.",
+                notFound = true
+            });
+        }
+
+        await _todoRepository.DeleteTodoAsync(id, userId);
+        await _todoRepository.SaveChangesAsync();
+        
+        _logger.LogInformation("Successfully deleted todo {TodoId} for user {UserId}", id, userId);
+        
+        return Json(new { 
+            success = true, 
+            message = $"Task #{todo.Id} deleted successfully!",
+            todoId = id
+        });
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Error deleting todo {TodoId}", id);
+        Response.StatusCode = StatusCodes.Status500InternalServerError;
+        return Json(new { 
+            success = false, 
+            message = "An error occurred while deleting the todo item.",
+            error = _env.IsDevelopment() ? ex.Message : null
+        });
+    }
+}
 
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> ClearCompleted()
+        public async Task<IActionResult> ClearCompleted(int? page, string? filter)
         {
             try
             {
@@ -289,24 +399,30 @@ namespace TodoApp.Controllers
                     return RedirectToPage("/Account/Login", new { area = "Identity" });
                 }
 
-                var completedTodos = await _todoRepository.GetUserTodosAsync(userId, true);
-                var completedTodosList = completedTodos?.ToList() ?? new List<TodoItem>();
+                // Get all completed todos (without pagination)
+                var completedTodos = await _todoRepository.GetUserTodosAsync(userId, true, 1, int.MaxValue);
+                var completedTodosList = completedTodos.ToList();
+                var count = completedTodosList.Count;
                 
-                foreach (var todo in completedTodosList)
+                if (count > 0)
                 {
-                    await _todoRepository.DeleteTodoAsync(todo.Id, userId);
+                    foreach (var todo in completedTodosList)
+                    {
+                        await _todoRepository.DeleteTodoAsync(todo.Id, userId);
+                    }
+                    
+                    await _todoRepository.SaveChangesAsync();
+                    TempData["SuccessMessage"] = $"Cleared {count} completed todo(s).";
                 }
                 
-                await _todoRepository.SaveChangesAsync();
-                
-                TempData["SuccessMessage"] = $"Cleared {completedTodosList.Count} completed todo(s).";
-                return RedirectToAction(nameof(Index));
+                // Redirect back to the current page and filter
+                return RedirectToAction(nameof(Index), new { page, filter });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error clearing completed todos");
                 TempData["ErrorMessage"] = "An error occurred while clearing completed todos.";
-                return RedirectToAction(nameof(Index));
+                return RedirectToAction(nameof(Index), new { page, filter });
             }
         }
 

@@ -12,37 +12,70 @@
         html, body {
             height: 100%;
             margin: 0;
+            padding: 0;
         }
+        
         body {
             display: flex;
             flex-direction: column;
             min-height: 100vh;
+            padding-top: 56px; /* Height of fixed navbar */
         }
+        
+        .navbar {
+            position: fixed;
+            top: 0;
+            right: 0;
+            left: 0;
+            z-index: 1030;
+            box-shadow: 0 2px 4px rgba(0,0,0,.1);
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            padding: 20px 15px;
+            margin: 0 auto;
+        }
+        
         main {
             flex: 1;
-            padding-bottom: 60px; /* Space for footer */
+            padding: 20px 0 40px;
+            margin-bottom: 60px; /* Space for footer */
         }
+        
         .footer {
-            position: relative;
-            bottom: 0;
-            width: 100%;
             background-color: #f8f9fa;
-            padding: 20px 0;
+            border-top: 1px solid #dee2e6;
             margin-top: auto;
+            width: 100%;
+            position: relative !important;
+            bottom: 0;
+        }
+        
+        /* Adjust for mobile view */
+        @@media (max-width: 767.98px) {
+            body {
+                padding-top: 56px;
+            }
+            
+            .container {
+                padding: 10px 15px;
+            }
         }
     </style>
     @RenderSection("Styles", required: false)
 </head>
 <body class="d-flex flex-column h-100">
     <header>
-        <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-white border-bottom box-shadow mb-3">
+        <nav class="navbar navbar-expand-md navbar-light bg-white fixed-top" style="min-height: 56px; padding: .5rem 1rem;">
             <div class="container-fluid">
                 <a class="navbar-brand" asp-area="" asp-controller="Home" asp-action="Index">TodoApp</a>
                 <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse" aria-controls="navbarSupportedContent"
                         aria-expanded="false" aria-label="Toggle navigation">
                     <span class="navbar-toggler-icon"></span>
                 </button>
-                <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
+                <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between align-items-center">
                     <ul class="navbar-nav flex-grow-1">
                         <li class="nav-item">
                             <a class="nav-link text-dark" asp-area="" asp-controller="Home" asp-action="Index">Home</a>
@@ -56,15 +89,19 @@
             </div>
         </nav>
     </header>
-    <div class="container flex-grow-1">
-        <main role="main" class="pb-3">
-            @RenderBody()
-        </main>
-    </div>
-
-    <footer class="footer border-top text-muted">
+    <main role="main" class="flex-shrink-0">
         <div class="container">
-            &copy; 2025 - TodoApp - <a asp-area="" asp-controller="Home" asp-action="Privacy">Privacy</a>
+            @RenderBody()
+        </div>
+    </main>
+
+    <footer class="footer border-top text-muted mt-auto">
+        <div class="container">
+            <div class="row">
+                <div class="col-12 text-center">
+                    &copy; @DateTime.Now.Year - TodoApp - <a asp-area="" asp-controller="Home" asp-action="Privacy">Privacy</a>
+                </div>
+            </div>
         </div>
     </footer>
     <script src="~/lib/jquery/dist/jquery.min.js"></script>

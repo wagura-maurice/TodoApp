@@ -5,146 +5,469 @@
     ViewData["Title"] = "My Todo List";
     var hasSuccessMessage = TempData["SuccessMessage"] != null;
     var hasErrorMessage = TempData["ErrorMessage"] != null;
+    
+    // Get pagination values from the model
+    var pagination = Model.Pagination ?? new TodoApp.ViewModels.PaginationInfo();
+    var totalItems = pagination.TotalItems;
+    var itemsPerPage = pagination.PageSize;
+    var currentPage = pagination.CurrentPage;
+    var totalPages = pagination.TotalPages;
+    var startItem = Math.Min((currentPage - 1) * itemsPerPage + 1, totalItems);
+    var endItem = Math.Min(currentPage * itemsPerPage, totalItems);
 }
 
-<div class="container py-5">
+<div class="container py-4">
     <div class="row justify-content-center">
         <div class="col-lg-8">
-            
-            <div class="card shadow-sm">
-                <div class="card-header bg-primary text-white">
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                     <h2 class="h5 mb-0">My Todo List</h2>
+                    <div class="btn-group" role="group">
+                        <a href="?filter=all" class="btn btn-sm @(Model.Filter == null || Model.Filter == "all" ? "btn-light" : "btn-outline-light")">
+                            All <span class="badge bg-secondary">@(Model.ActiveCount + Model.CompletedCount)</span>
+                        </a>
+                        <a href="?filter=active" class="btn btn-sm @(Model.Filter == "active" ? "btn-light" : "btn-outline-light")">
+                            Active <span class="badge bg-primary">@Model.ActiveCount</span>
+                        </a>
+                        <a href="?filter=completed" class="btn btn-sm @(Model.Filter == "completed" ? "btn-light" : "btn-outline-light")">
+                            Completed <span class="badge bg-success">@Model.CompletedCount</span>
+                        </a>
+                    </div>
                 </div>
                 
-                <div class="card-body">
-                    <form asp-action="Create" method="post" class="mb-4" id="todo-form" onsubmit="return submitTodoForm(event)">
-                        <div asp-validation-summary="ModelOnly" class="text-danger"></div>
-                        <div class="input-group">
-                            <input asp-for="NewTodoTitle" class="form-control form-control-lg" 
-                                   placeholder="What needs to be done?" required>
-                            <button type="submit" class="btn btn-primary">
-                                <i class="bi bi-plus-lg"></i> Add
-                            </button>
-                        </div>
-                        <div class="mt-2">
-                            <textarea asp-for="NewTodoDescription" class="form-control" rows="2" 
-                                     placeholder="Description (optional)"></textarea>
-                            <span asp-validation-for="NewTodoTitle" class="text-danger"></span>
-                        </div>
-                    </form>
+                <div class="card-body p-0">
+                    <!-- Todo form with items per page -->
+                    <div class="p-4 border-bottom">
+                        <form asp-action="Create" method="post" id="todo-form" onsubmit="return submitTodoForm(event)">
+                            <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+                            <div class="mb-3">
+                                <input asp-for="NewTodoTitle" class="form-control form-control-lg" 
+                                       placeholder="What needs to be done?" required>
+                                <span asp-validation-for="NewTodoTitle" class="text-danger small"></span>
+                            </div>
+                            <div class="mb-3">
+                                <textarea asp-for="NewTodoDescription" class="form-control" rows="2" 
+                                         placeholder="Description (optional)"></textarea>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center flex-wrap">
+                                @if (pagination.TotalItems > 5)
+                                {
+                                    <div class="d-flex align-items-center mb-2 mb-md-0">
+                                        <select id="pageSize" class="form-select form-select-sm" style="width: auto;" 
+                                                onchange="updatePageSize(this.value)">
+                                            @{
+                                                var pageSizes = new[] { 5, 10, 20, 50, 100 };
+                                                var currentPageSize = pagination.PageSize;
+                                            }
+                                            @foreach (var size in pageSizes)
+                                            {
+                                                <option value="@size" selected="@(size == currentPageSize)">@size</option>
+                                            }
+                                        </select>
+                                        <label for="pageSize" class="form-label mb-0 ms-2 small text-muted">Items per page</label>
+                                    </div>
+                                }
+                                <div>
+                                    <button type="submit" class="btn btn-primary px-4">
+                                        <i class="bi bi-plus-lg me-2"></i>Add Todo
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
 
-                    <div class="list-group" id="todo-list">
+                    <!-- Todo List -->
+                    <div class="list-group list-group-flush" id="todo-list">
                         @if (!Model.Todos.Any())
                         {
-                            <div class="text-center py-4 text-muted">
+                            <div class="text-center text-muted py-5">
                                 <i class="bi bi-check2-circle display-4 d-block mb-2"></i>
-                                <h5>No tasks yet</h5>
-                                <p class="mb-0">Add a task to get started!</p>
+                                <p class="mb-0">No todos found. Add one above to get started!</p>
                             </div>
                         }
                         else
                         {
-                            foreach (var item in Model.Todos)
+                            @foreach (var todo in Model.Todos)
                             {
-                                <div class="list-group-item list-group-item-action @(item.IsCompleted ? "bg-light" : "")">
-                                    <div class="d-flex align-items-center">
-                                        <form asp-action="ToggleComplete" method="post" class="me-2 toggle-complete-form" data-id="@item.Id">
-                                            <input type="hidden" name="id" value="@item.Id" />
-                                            <button type="button" class="btn btn-sm btn-outline-success border-0 p-0 me-2 toggle-complete-btn" 
-                                                    data-bs-toggle="tooltip" title="Toggle Complete"
-                                                    data-title="@item.Title">
-                                                <i class="bi @item.StatusIcon" style="font-size: 1.5rem;"></i>
-                                            </button>
-                                        </form>
-                                        <div class="flex-grow-1">
-                                            <h5 class="mb-1 @(item.IsCompleted ? "text-muted text-decoration-line-through" : "")">
-                                                @item.Title
-                                            </h5>
-                                            @if (!string.IsNullOrEmpty(item.Description))
-                                            {
-                                                <p class="mb-1 small text-muted">@item.Description</p>
-                                            }
-                                            <div class="d-flex align-items-center mt-1">
-                                                <small class="text-muted me-2">
-                                                    <i class="bi bi-calendar3"></i> 
-                                                    @item.CreatedAtFormatted
-                                                    @if (item.IsCompleted && item.CompletedAt.HasValue)
-                                                    {
-                                                        <span class="ms-2">
-                                                            <i class="bi bi-check2-all text-success"></i>
-                                                            @item.CompletedAtFormatted
-                                                        </span>
-                                                    }
-                                                </small>
-                                                
-                                                @if (!string.IsNullOrEmpty(item.AuthorName))
-                                                {
-                                                    <div class="d-flex align-items-center ms-2" data-bs-toggle="tooltip" title="@item.AuthorName">
-                                                        <div class="avatar-sm me-1" style="width: 20px; height: 20px; background-color: #6c757d; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.6rem; font-weight: bold;">
-                                                            @item.AuthorInitials
-                                                        </div>
-                                                        <small class="text-muted">@item.AuthorName</small>
-                                                    </div>
-                                                }
+                                <div class="list-group-item d-flex align-items-start p-3" data-todo-id="@todo.Id" style="position: relative;">
+                                    <div class="form-check me-3 mt-1 position-relative">
+                                        <input type="checkbox" class="form-check-input todo-checkbox" 
+                                               @(todo.IsCompleted ? "checked" : "") 
+                                               data-todo-id="@todo.Id"
+                                               onchange="toggleTodoComplete(this)"
+                                               style="width: 1.25rem; height: 1.25rem; cursor: pointer;"
+                                               @(todo.IsCompleted ? "disabled" : "")>
+                                        @if (todo.IsCompleted)
+                                        {
+                                            <div class="position-absolute top-0 start-0 w-100 h-100" style="z-index: 1;" title="Mark as incomplete" 
+                                                 onclick="if (!window.isClickOnActionButton(event)) { toggleTodoCompleteByOverlay(this) }">
+                                            </div>
+                                        }
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        <div class="d-flex justify-content-between align-items-start">
+                                            <h6 class="mb-1 @(todo.IsCompleted ? "text-decoration-line-through text-muted" : "") ">
+                                                @todo.Title
+                                            </h6>
+                                            <div class="btn-group btn-group-sm ms-3" role="group">
+                                                <button type="button" class="btn btn-outline-primary edit-todo" data-todo-id="@todo.Id">
+                                                    <i class="bi bi-pencil"></i>
+                                                </button>
+                                                <button type="button" class="btn btn-outline-danger delete-todo" data-todo-id="@todo.Id">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
                                             </div>
                                         </div>
-                                        <form asp-action="Delete" method="post" class="ms-2 delete-form" data-id="@item.Id">
-                                            <input type="hidden" name="id" value="@item.Id" />
-                                            <button type="button" class="btn btn-sm btn-outline-danger delete-btn" 
-                                                    data-bs-toggle="tooltip" title="Delete"
-                                                    data-title="@item.Title">
-                                                <i class="bi bi-trash"></i>
-                                            </button>
-                                        </form>
+                                        @if (!string.IsNullOrEmpty(todo.Description))
+                                        {
+                                            <p class="mb-2 small text-muted">@todo.Description</p>
+                                        }
+                                        <div class="d-flex align-items-center">
+                                            <small class="text-muted">
+                                                <i class="bi bi-calendar3 me-1"></i> @todo.CreatedAt.ToString("MMM d, yyyy")
+                                                <span class="ms-3" data-todo-status="@todo.IsCompleted.ToString().ToLower()">
+                                                    <i class="bi @(todo.IsCompleted ? "bi-check2-all text-success" : "bi-x-circle text-muted") me-1"></i> @(todo.IsCompleted ? "Completed" : "Incomplete")
+                                                </span>
+                                            </small>
+                                        </div>
                                     </div>
                                 </div>
                             }
                         }
                     </div>
-                </div>
-                
-                @if (Model.Todos.Any())
-                {
-                    <div class="card-footer bg-light d-flex justify-content-between align-items-center flex-wrap">
-                        <small class="text-muted mb-2 mb-md-0">
-                            @Model.ActiveCount @(Model.ActiveCount == 1 ? "item" : "items") left
-                        </small>
-                        <div class="btn-group" role="group" aria-label="Todo filters">
-                            <a asp-action="Index" asp-route-filter="" 
-                               class="btn btn-sm @(string.IsNullOrEmpty(Model.Filter) ? "btn-primary" : "btn-outline-secondary") ">
-                                All
-                            </a>
-                            <a asp-action="Index" asp-route-filter="active" 
-                               class="btn btn-sm @(Model.Filter == "active" ? "btn-primary" : "btn-outline-secondary") ">
-                                Active
-                            </a>
-                            <a asp-action="Index" asp-route-filter="completed" 
-                               class="btn btn-sm @(Model.Filter == "completed" ? "btn-primary" : "btn-outline-secondary") ">
-                                Completed
-                            </a>
+                    
+                    <!-- Pagination -->
+                    @if (pagination.TotalItems > 0)
+                    {
+                        <div class="d-flex justify-content-between align-items-center p-3 border-top bg-light">
+                            <div class="text-muted small">
+                                Showing @startItem to @endItem of @pagination.TotalItems items
+                            </div>
+                            @if (totalPages > 1)
+                            {
+                                <nav>
+                                    <ul class="pagination pagination-sm mb-0">
+                                        @if (pagination.CurrentPage > 1)
+                                        {
+                                            <li class="page-item">
+                                                <a class="page-link" href="?page=@(pagination.CurrentPage - 1)&pageSize=@pagination.PageSize@(!string.IsNullOrEmpty(Model.Filter) ? $"&filter={Model.Filter}" : "")">
+                                                    Previous
+                                                </a>
+                                            </li>
+                                        }
+                                        
+                                        @for (int i = 1; i <= totalPages; i++)
+                                        {
+                                            <li class="page-item @(i == pagination.CurrentPage ? "active" : "")">
+                                                <a class="page-link" href="?page=@i&pageSize=@pagination.PageSize@(!string.IsNullOrEmpty(Model.Filter) ? $"&filter={Model.Filter}" : "")">
+                                                    @i
+                                                </a>
+                                            </li>
+                                        }
+                                        
+                                        @if (pagination.CurrentPage < totalPages)
+                                        {
+                                            <li class="page-item">
+                                                <a class="page-link" href="?page=@(pagination.CurrentPage + 1)&pageSize=@pagination.PageSize@(!string.IsNullOrEmpty(Model.Filter) ? $"&filter={Model.Filter}" : "")">
+                                                    Next
+                                                </a>
+                                            </li>
+                                        }
+                                    </ul>
+                                </nav>
+                            }
                         </div>
-                        @if (Model.CompletedCount > 0)
-                        {
-                            <form asp-action="ClearCompleted" method="post" class="ms-md-2 mt-2 mt-md-0">
-                                <button type="submit" class="btn btn-sm btn-outline-danger">
-                                    Clear completed (@Model.CompletedCount)
-                                </button>
-                            </form>
-                        }
-                    </div>
-                }
-            </div>
-        </div>
-    </div>
-</div>
+                    }
+                </div>
+<script>
+    // Function to update page size
+    function updatePageSize(pageSize) {
+        // Get current URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        // Update page size parameter
+        urlParams.set('pageSize', pageSize);
+        // Reset to first page when changing page size
+        urlParams.set('page', '1');
+        // Redirect to the new URL
+        window.location.search = urlParams.toString();
+    }
+
+    </script>
+    <style>
+    
+    .list-group::-webkit-scrollbar {
+        width: 6px;
+    }
+    
+    .list-group::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 3px;
+    }
+    
+    .list-group::-webkit-scrollbar-thumb {
+        background: #888;
+        border-radius: 3px;
+    }
+    
+    .list-group::-webkit-scrollbar-thumb:hover {
+        background: #555;
+    }
+    
+    .list-group-item {
+        border-left: none;
+        border-right: none;
+    }
+    
+    .list-group-item:first-child {
+        border-top: none;
+    }
+    
+    .list-group-item:last-child {
+        border-bottom: 1px solid rgba(0, 0, 0, 0.125);
+    }
+    
+    .page-item.active .page-link {
+        background-color: #0d6efd;
+        border-color: #0d6efd;
+    }
+    
+    .page-link {
+        color: #0d6efd;
+    }
+</style>
 
 @section Styles {
     <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
 }
 
+<script>
+// Helper function to check if click is on an action button
+window.isClickOnActionButton = function(event) {
+    // Check if the click was on or inside a button or its icon
+    const target = event.target;
+    const isButtonClick = target.closest('.btn') || 
+                         target.closest('.edit-todo') || 
+                         target.closest('.delete-todo') ||
+                         target.closest('.bi-pencil') ||
+                         target.closest('.bi-trash');
+    return !!isButtonClick;
+};
+
+// Define the function in the global scope
+window.toggleTodoCompleteByOverlay = function(overlay) {
+    const todoItem = overlay.closest('.list-group-item');
+    const checkbox = todoItem.querySelector('.todo-checkbox');
+    if (checkbox) {
+        checkbox.checked = !checkbox.checked;
+        window.toggleTodoComplete(checkbox);
+    }
+};
+</script>
+
 @section Scripts {
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script>
+        // Function to handle todo completion toggle
+        window.toggleTodoComplete = async function(checkbox) {
+            // If called with an event, get the checkbox element
+            if (checkbox && typeof checkbox === 'object' && 'target' in checkbox) {
+                checkbox = checkbox.target;
+            } else if (checkbox && checkbox.classList && checkbox.classList.contains('position-absolute')) {
+                // Handle click on the overlay
+                const realCheckbox = checkbox.previousElementSibling;
+                if (realCheckbox) {
+                    realCheckbox.checked = !realCheckbox.checked;
+                    return toggleTodoComplete(realCheckbox);
+                }
+                return;
+            }
+            
+            const todoItem = checkbox.closest('.list-group-item');
+            if (!todoItem) return; // Exit if todo item not found
+            
+            const todoId = checkbox.getAttribute('data-todo-id');
+            const titleElement = todoItem.querySelector('h6');
+            const completedAtElement = todoItem.querySelector('.completed-date');
+            const isChecked = checkbox.checked;
+            
+            // Store references to DOM elements we'll need later
+            const formCheck = todoItem.querySelector('.form-check');
+            if (!formCheck) return;
+            
+            // Show loading state
+            formCheck.innerHTML = `
+                <div class="spinner-border spinner-border-sm text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            `;
+            
+            try {
+                // Get CSRF token
+                const token = document.querySelector('input[name="__RequestVerificationToken"]').value;
+                
+                // Make API call to toggle completion
+                const response = await fetch(`/Todo/ToggleComplete/${todoId}`, {
+                    method: 'POST',
+                    headers: {
+                        'RequestVerificationToken': token,
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Update UI based on the new state
+                    if (isChecked) {
+                        // Mark as completed
+                        titleElement.classList.add('text-decoration-line-through', 'text-muted');
+                        
+                        // Update status display
+                        const statusElement = todoItem.querySelector('[data-todo-status]');
+                        if (statusElement) {
+                            statusElement.innerHTML = `
+                                <i class="bi bi-check2-all text-success me-1"></i> Completed
+                            `;
+                            statusElement.setAttribute('data-todo-status', 'true');
+                        }
+                    } else {
+                        // Mark as incomplete
+                        titleElement.classList.remove('text-decoration-line-through', 'text-muted');
+                        
+                        // Update status display
+                        const statusElement = todoItem.querySelector('[data-todo-status]');
+                        if (statusElement) {
+                            statusElement.innerHTML = `
+                                <i class="bi bi-x-circle text-muted me-1"></i> Incomplete
+                            `;
+                            statusElement.setAttribute('data-todo-status', 'false');
+                        }
+                        
+                        // Remove overlay if exists
+                        const overlay = todoItem.querySelector('.position-absolute');
+                        if (overlay) {
+                            overlay.remove();
+                        }
+                    }
+                    
+                    // Show success message with todo ID and status
+                    const statusMessage = isChecked ? 'marked as completed!' : 'marked as incomplete';
+                    showToast('Success', `Todo item #${todoId} ${statusMessage}`, 'success');
+                    
+                    // Update the checkbox state
+                    const newCheckbox = document.createElement('input');
+                    newCheckbox.type = 'checkbox';
+                    newCheckbox.className = 'form-check-input todo-checkbox';
+                    newCheckbox.checked = isChecked;
+                    newCheckbox.dataset.todoId = todoId;
+                    newCheckbox.style.width = '1.25rem';
+                    newCheckbox.style.height = '1.25rem';
+                    newCheckbox.style.cursor = 'pointer';
+                    if (isChecked) newCheckbox.disabled = true;
+                    
+                    formCheck.innerHTML = '';
+                    formCheck.appendChild(newCheckbox);
+                    
+                    if (isChecked) {
+                        const overlay = document.createElement('div');
+                        overlay.className = 'position-absolute top-0 start-0 w-100 h-100';
+                        overlay.style.zIndex = '1';
+                        overlay.title = 'Mark as incomplete';
+                        overlay.onclick = (e) => {
+                            e.stopPropagation();
+                            toggleTodoComplete(e.currentTarget);
+                        };
+                        formCheck.appendChild(overlay);
+                    }
+                    
+                    // Re-attach event listener
+                    newCheckbox.addEventListener('change', function() {
+                        toggleTodoComplete(this);
+                    });
+                } else {
+                    // Revert checkbox state if API call failed
+                    checkbox = todoItem.querySelector('.todo-checkbox');
+                    if (checkbox) {
+                        checkbox.checked = !isChecked;
+                    }
+                    throw new Error(result.message || 'Failed to update todo');
+                }
+            } catch (error) {
+                console.error('Error toggling todo status:', error);
+                showToast('Error', 'An error occurred while updating the todo.', 'error');
+                
+                // Restore checkbox state on error
+                if (formCheck) {
+                    formCheck.innerHTML = `
+                        <input type="checkbox" class="form-check-input todo-checkbox" 
+                               ${!isChecked ? 'checked' : ''}
+                               data-todo-id="${todoId}"
+                               onchange="window.toggleTodoComplete(this)"
+                               style="width: 1.25rem; height: 1.25rem; cursor: pointer;"
+                               ${!isChecked ? '' : 'disabled'}>
+                        ${isChecked ? `
+                            <div class="position-absolute top-0 start-0 w-100 h-100" style="z-index: 1;" 
+                                 title="Mark as incomplete" 
+                                 onclick="event.stopPropagation(); window.toggleTodoCompleteByOverlay(this)">
+                            </div>
+                        ` : ''}
+                    `;
+                }
+            } finally {
+                // Ensure the checkbox is restored if still in loading state
+                const loadingSpinner = todoItem.querySelector('.spinner-border');
+                if (loadingSpinner && !todoItem.querySelector('.todo-checkbox')) {
+                    const formCheck = todoItem.querySelector('.form-check');
+                    if (formCheck) {
+                        formCheck.innerHTML = `
+                            <input type="checkbox" class="form-check-input todo-checkbox" 
+                                   ${isChecked ? 'checked' : ''}
+                                   data-todo-id="${todoId}"
+                                   onchange="toggleTodoComplete(this)"
+                                   style="width: 1.25rem; height: 1.25rem; cursor: pointer;"
+                                   ${isChecked ? 'disabled' : ''}>
+                            ${isChecked ? `
+                                <div class="position-absolute top-0 start-0 w-100 h-100" style="z-index: 1;" 
+                                     title="Mark as incomplete" 
+                                     onclick="event.stopPropagation(); toggleTodoComplete(this.previousElementSibling)">
+                                </div>
+                            ` : ''}
+                        `;
+                    }
+                }
+            }
+        }
+
+        // Function to show toast notification
+        function showToast(title, message, type = 'success') {
+            if (!window.Swal) {
+                console.log(`${title}: ${message}`);
+                return Promise.resolve();
+            }
+            
+            const Toast = Swal.mixin({
+                toast: true,
+                position: 'top-end',
+                showConfirmButton: false,
+                timer: 3000,
+                timerProgressBar: true,
+                didOpen: (toast) => {
+                    toast.addEventListener('mouseenter', Swal.stopTimer);
+                    toast.addEventListener('mouseleave', Swal.resumeTimer);
+                }
+            });
+            
+            return Toast.fire({
+                icon: type,
+                title: message
+            });
+        }
+
         // Enable Bootstrap tooltips with null check
         document.addEventListener('DOMContentLoaded', function() {
             var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
@@ -156,6 +479,145 @@
             }).filter(Boolean); // Remove any null entries
         });
 
+        // Handle delete button click with confirmation
+        async function handleDeleteClick(e) {
+            const deleteBtn = e.target.closest('.delete-todo');
+            if (!deleteBtn) return;
+            
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const todoId = deleteBtn.dataset.todoId;
+            if (!todoId) {
+                console.error('No todo ID found for delete button');
+                return;
+            }
+            
+            const todoItem = deleteBtn.closest('.list-group-item');
+            const todoTitle = todoItem ? todoItem.querySelector('h6')?.textContent?.trim() || 'this todo' : 'this todo';
+            const tokenElement = document.querySelector('input[name="__RequestVerificationToken"]');
+            
+            if (!tokenElement || !tokenElement.value) {
+                console.error('Anti-forgery token not found');
+                showToast('Error', 'Security token is missing. Please refresh the page and try again.', 'error');
+                return;
+            }
+            
+            // Store original button state
+            const originalHTML = deleteBtn.innerHTML;
+            const originalDisabled = deleteBtn.disabled;
+            
+            // Set loading state
+            deleteBtn.disabled = true;
+            deleteBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Deleting...';
+            
+            try {
+                // Show confirmation dialog
+                const result = await Swal.fire({
+                    title: 'Delete Todo',
+                    text: `Are you sure you want to delete "${todoTitle}"?`,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Yes, delete it!',
+                    cancelButtonText: 'No, keep it',
+                    confirmButtonColor: '#d33',
+                    cancelButtonColor: '#3085d6',
+                    reverseButtons: true
+                });
+                
+                if (!result.isConfirmed) {
+                    await showToast('Cancelled', 'Your todo is safe!', 'info');
+                    return;
+                }
+                
+                // Show loading state
+                deleteBtn.disabled = true;
+                const originalText = deleteBtn.innerHTML;
+                deleteBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Deleting...';
+                
+                // Make the delete request with form data
+                const formData = new FormData();
+                formData.append('__RequestVerificationToken', tokenElement.value);
+                
+                const response = await fetch(`/Todo/Delete/${todoId}`, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: formData,
+                    credentials: 'same-origin'
+                });
+
+                // Check if response is OK before trying to parse JSON
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                // Try to parse JSON response
+                let data;
+                try {
+                    data = await response.json();
+                } catch (e) {
+                    console.error('Failed to parse JSON response:', e);
+                    throw new Error('Invalid response from server. Please try again.');
+                }
+                
+                // Handle authentication required case
+                if (data.requiresLogin) {
+                    window.location.href = '/Identity/Account/Login';
+                    return;
+                }
+                
+                // If we get here, the deletion was successful
+                if (todoItem) {
+                    // Add fade-out animation
+                    todoItem.style.transition = 'opacity 0.3s';
+                    todoItem.style.opacity = '0';
+                    
+                    // Remove from DOM after animation completes
+                    setTimeout(() => {
+                        if (todoItem && todoItem.parentNode) {
+                            todoItem.remove();
+                        }
+                    }, 300);
+                }
+                
+                // Show success message
+                await showToast('Success', data.message || 'Todo deleted successfully!', 'success');
+                
+            } catch (error) {
+                console.error('Error deleting todo:', error);
+                await showToast('Error', error.message || 'An error occurred while deleting the todo', 'error');
+            } finally {
+                // Reset button state in case of success or error
+                if (deleteBtn) {
+                    deleteBtn.disabled = originalDisabled;
+                    deleteBtn.innerHTML = originalHTML;
+                }
+            }
+        }
+
+        // Handle delete button clicks
+        document.addEventListener('click', function(e) {
+            const deleteBtn = e.target.closest('.delete-todo');
+            if (deleteBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                handleDeleteClick(e);
+            }
+        });
+        
+        // Handle edit button clicks
+        document.addEventListener('click', function(e) {
+            const editBtn = e.target.closest('.edit-todo');
+            if (editBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                // Add your edit functionality here
+                console.log('Edit clicked for todo:', editBtn.dataset.todoId);
+            }
+        });
+        
         // Auto-focus the title input when the page loads
         document.addEventListener('DOMContentLoaded', function() {
             try {
@@ -327,13 +789,21 @@
                     }
                     
                     if (data.success) {
+                        console.log('Todo added response:', data); // Debug log
+                        event.preventDefault(); // Stop reloading of the page
+                        event.stopPropagation(); // Stop reloading of the page
+                        
                         // Show success toast
                         if (window.Swal) {
+                            console.log('Todo added response:', data); // Debug log
+                            const todoId = data.todo?.id || data.todoId || 'N/A';
+                            const message = data.message || `Todo #${todoId} added successfully!`;
+                            
                             Swal.fire({
                                 toast: true,
                                 position: 'top-end',
                                 icon: 'success',
-                                title: data.message || 'Todo added successfully!',
+                                title: message,
                                 showConfirmButton: false,
                                 timer: 3000
                             });

@@ -608,15 +608,185 @@ window.toggleTodoCompleteByOverlay = function(overlay) {
         });
         
         // Handle edit button clicks
-        document.addEventListener('click', function(e) {
+        document.addEventListener('click', async function(e) {
             const editBtn = e.target.closest('.edit-todo');
             if (editBtn) {
                 e.preventDefault();
                 e.stopPropagation();
-                // Add your edit functionality here
-                console.log('Edit clicked for todo:', editBtn.dataset.todoId);
+                await handleEditClick(e);
             }
         });
+        
+        // Function to handle todo editing
+        async function handleEditClick(e) {
+            const editBtn = e.target.closest('.edit-todo');
+            if (!editBtn) return;
+            
+            const todoId = editBtn.dataset.todoId;
+            const todoItem = editBtn.closest('.list-group-item');
+            const currentTitle = todoItem ? todoItem.querySelector('h6')?.textContent?.trim() || '' : '';
+            const currentDescription = todoItem ? (todoItem.querySelector('p.small.text-muted')?.textContent?.trim() || '') : '';
+            const tokenElement = document.querySelector('input[name="__RequestVerificationToken"]');
+            
+            if (!tokenElement || !tokenElement.value) {
+                console.error('Anti-forgery token not found');
+                showToast('Error', 'Security token is missing. Please refresh the page and try again.', 'error');
+                return;
+            }
+            
+            // Store original button state
+            const originalHTML = editBtn.innerHTML;
+            const originalDisabled = editBtn.disabled;
+            
+            try {
+                // Show edit form in SweetAlert
+                const { value: formValues, isConfirmed } = await Swal.fire({
+                    title: 'Edit Todo',
+                    html:
+                        '<div class="mb-3">' +
+                        '  <label for="edit-title" class="form-label">Title</label>' +
+                        `  <input id="edit-title" class="form-control" value="${currentTitle}" required>` +
+                        '</div>' +
+                        '<div class="mb-3">' +
+                        '  <label for="edit-description" class="form-label">Description (Optional)</label>' +
+                        `  <textarea id="edit-description" class="form-control" rows="3">${currentDescription}</textarea>` +
+                        '</div>',
+                    focusConfirm: false,
+                    showCancelButton: true,
+                    confirmButtonText: 'Save Changes',
+                    cancelButtonText: 'Cancel',
+                    preConfirm: () => {
+                        const title = document.getElementById('edit-title').value.trim();
+                        if (!title) {
+                            Swal.showValidationMessage('Title is required');
+                            return false;
+                        }
+                        return {
+                            title: title,
+                            description: document.getElementById('edit-description').value.trim()
+                        };
+                    }
+                });
+                
+                if (isConfirmed && formValues) {
+                    // Set loading state
+                    editBtn.disabled = true;
+                    editBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...';
+                    
+                    // Prepare form data
+                    const formData = new FormData();
+                    formData.append('__RequestVerificationToken', tokenElement.value);
+                    formData.append('Title', formValues.title);
+                    formData.append('Description', formValues.description);
+                    
+                    // Make the API call to update the todo
+                    const response = await fetch(`/Todo/Edit?todoId=${todoId}`, {
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'RequestVerificationToken': tokenElement.value
+                        },
+                        body: formData,
+                        credentials: 'same-origin'  // Ensure cookies are sent with the request
+                    });
+                    
+                    // Log response for debugging
+                    console.log('Edit response status:', response.status);
+                    console.log('Response headers:', Object.fromEntries([...response.headers]));
+                    
+                    if (!response.ok) {
+                        let errorMessage = `HTTP error! status: ${response.status} ${response.statusText}`;
+                        let errorData = {};
+                        let responseText = '';
+                        
+                        try {
+                            // First get the response text
+                            responseText = await response.text();
+                            console.log('Raw response text:', responseText);
+                            
+                            // Try to parse as JSON if possible
+                            try {
+                                errorData = JSON.parse(responseText);
+                                console.error('Edit error response (parsed):', errorData);
+                            } catch (jsonError) {
+                                console.error('Could not parse response as JSON:', jsonError);
+                                errorMessage += `\nResponse: ${responseText}`;
+                            }
+                            
+                            // If we have a message in the error response, use it
+                            if (errorData && errorData.message) {
+                                errorMessage = errorData.message;
+                            }
+                            
+                            // If we have a validation error, include the field
+                            if (errorData && errorData.field) {
+                                errorMessage += ` (${errorData.field})`;
+                            }
+                            
+                            // If we have a detailed error, include it (always show in development, controlled by server)
+                            if (errorData && errorData.error) {
+                                errorMessage += `\n\n${errorData.error}`;
+                            }
+                        } catch (e) {
+                            // If we can't parse the response as JSON, try to get the text
+                            try {
+                                const errorText = await response.text();
+                                console.error('Raw error response text:', errorText);
+                                errorMessage = `Error: ${errorText || 'Unknown error'}`;
+                            } catch (textError) {
+                                console.error('Could not read error response as text:', textError);
+                            }
+                        }
+                        
+                        throw new Error(errorMessage);
+                    }
+                    
+                    const result = await response.json();
+                    console.log('Edit success response:', result);
+                    
+                    if (result.success) {
+                        // Update the UI
+                        if (todoItem) {
+                            const titleElement = todoItem.querySelector('h6');
+                            const descriptionElement = todoItem.querySelector('p.small.text-muted');
+                            
+                            if (titleElement) {
+                                titleElement.textContent = formValues.title;
+                            }
+                            
+                            if (formValues.description) {
+                                if (!descriptionElement) {
+                                    const newDescription = document.createElement('p');
+                                    newDescription.className = 'mb-2 small text-muted';
+                                    newDescription.textContent = formValues.description;
+                                    const actionsDiv = todoItem.querySelector('.d-flex.justify-content-between');
+                                    if (actionsDiv) {
+                                        actionsDiv.after(newDescription);
+                                    }
+                                } else {
+                                    descriptionElement.textContent = formValues.description;
+                                }
+                            } else if (descriptionElement) {
+                                descriptionElement.remove();
+                            }
+                        }
+                        
+                        showToast('Success', result.message || 'Todo updated successfully!', 'success');
+                    } else {
+                        throw new Error(result.message || 'Failed to update todo');
+                    }
+                }
+            } catch (error) {
+                console.error('Error updating todo:', error);
+                showToast('Error', error.message || 'An error occurred while updating the todo', 'error');
+            } finally {
+                // Reset button state
+                if (editBtn) {
+                    editBtn.disabled = originalDisabled;
+                    editBtn.innerHTML = originalHTML;
+                }
+            }
+        }
         
         // Auto-focus the title input when the page loads
         document.addEventListener('DOMContentLoaded', function() {

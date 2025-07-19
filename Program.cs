@@ -1,93 +1,56 @@
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.EntityFrameworkCore;
 using TodoApp.Data;
 using TodoApp.Interfaces;
 using TodoApp.Middleware;
 using TodoApp.Models;
 using TodoApp.Services;
+using TodoApp.ViewModels;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
-// Configure DbContext with SQLite
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlite(connectionString, 
-        b => b.MigrationsAssembly("TodoApp")));
+    options.UseSqlite(connectionString));
 
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
-// Configure Identity
-builder.Services.AddIdentity<IdentityUser, IdentityRole>(options => 
-    {
-        // Password settings
+builder.Services.AddIdentity<IdentityUser, IdentityRole>(options => {
+        options.SignIn.RequireConfirmedAccount = false; // Disable email confirmation requirement
+        options.SignIn.RequireConfirmedEmail = false;   // Ensure email confirmation is not required
+        options.SignIn.RequireConfirmedPhoneNumber = false; // Ensure phone confirmation is not required
+        
+        // Password settings (optional, adjust as needed)
         options.Password.RequireDigit = true;
         options.Password.RequireLowercase = true;
-        options.Password.RequireNonAlphanumeric = true;
         options.Password.RequireUppercase = true;
+        options.Password.RequireNonAlphanumeric = true;
         options.Password.RequiredLength = 8;
-        
-        // Lockout settings
-        options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(5);
-        options.Lockout.MaxFailedAccessAttempts = 5;
-        options.Lockout.AllowedForNewUsers = true;
-        
-        // User settings
-        options.User.AllowedUserNameCharacters =
-            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._@+";
-        options.User.RequireUniqueEmail = true;
-        
-        // SignIn settings
-        options.SignIn.RequireConfirmedAccount = false;
-        options.SignIn.RequireConfirmedEmail = false;
-        options.SignIn.RequireConfirmedPhoneNumber = false;
     })
     .AddEntityFrameworkStores<ApplicationDbContext>()
-    .AddDefaultUI()
     .AddDefaultTokenProviders()
-    .AddRoles<IdentityRole>();
+    .AddDefaultUI();
 
-// Configure cookie settings
-builder.Services.ConfigureApplicationCookie(options =>
-{
-    // Cookie settings
-    options.Cookie.HttpOnly = true;
-    options.ExpireTimeSpan = TimeSpan.FromDays(30);
-    options.LoginPath = "/Identity/Account/Login";
-    options.AccessDeniedPath = "/Identity/Account/AccessDenied";
-    options.SlidingExpiration = true;
-});
-
-// Add controllers with views and Razor pages
 builder.Services.AddControllersWithViews()
     .AddRazorRuntimeCompilation();
 
-// Register application services
+// Register services
 builder.Services.AddScoped<ITodoRepository, TodoRepository>();
-builder.Services.AddTransient<IEmailSender, EmailSender>();
-
-// Add session support (if needed for temp data)
-builder.Services.AddSession(options =>
-{
-    options.IdleTimeout = TimeSpan.FromMinutes(30);
-    options.Cookie.HttpOnly = true;
-    options.Cookie.IsEssential = true;
-});
+// Register EmailSender with the correct interface
+builder.Services.AddTransient<IEmailSender<IdentityUser>, EmailSender>();
 
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    app.UseDeveloperExceptionPage();
     app.UseMigrationsEndPoint();
 }
 else
 {
     app.UseExceptionHandler("/Home/Error");
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
 
@@ -96,25 +59,15 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
-// Add session middleware
-app.UseSession();
-
-// Add authentication and authorization
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Use custom exception handling middleware
+// Add custom exception handling middleware
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
-// Configure status code pages
-app.UseStatusCodePagesWithReExecute("/Home/Error", "?statusCode={0}");
-
-// Map controllers and Razor pages
 app.MapControllerRoute(
     name: "default",
-    pattern: "{controller=Todo}/{action=Index}/{id?}");
-
-// Map Razor Pages (for Identity)
+    pattern: "{controller=Home}/{action=Index}/{id?}");
 app.MapRazorPages();
 
 // Initialize the database
@@ -124,14 +77,40 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var context = services.GetRequiredService<ApplicationDbContext>();
+        
+        // Apply any pending migrations
+        context.Database.Migrate();
+        
+        // Get the required services
         var userManager = services.GetRequiredService<UserManager<IdentityUser>>();
         var roleManager = services.GetRequiredService<RoleManager<IdentityRole>>();
         
-        // Apply migrations
-        context.Database.Migrate();
+        // Seed initial roles if they don't exist
+        string[] roles = { "Admin", "User" };
+        foreach (var role in roles)
+        {
+            if (!await roleManager.RoleExistsAsync(role))
+            {
+                await roleManager.CreateAsync(new IdentityRole(role));
+            }
+        }
         
-        // Seed initial data if needed
-        // await SeedData.Initialize(services);
+        // Create default admin user if no users exist
+        if (!userManager.Users.Any())
+        {
+            var adminUser = new IdentityUser
+            {
+                UserName = "admin@example.com",
+                Email = "admin@example.com",
+                EmailConfirmed = true
+            };
+            
+            var result = await userManager.CreateAsync(adminUser, "Admin123!");
+            if (result.Succeeded)
+            {
+                await userManager.AddToRoleAsync(adminUser, "Admin");
+            }
+        }
     }
     catch (Exception ex)
     {
@@ -139,5 +118,14 @@ using (var scope = app.Services.CreateScope())
         logger.LogError(ex, "An error occurred while migrating or initializing the database.");
     }
 }
+
+// Log application startup
+var appLogger = app.Services.GetRequiredService<ILogger<Program>>();
+appLogger.LogInformation("Application starting...");
+
+// Log environment information
+appLogger.LogInformation("Environment: {Environment}", app.Environment.EnvironmentName);
+appLogger.LogInformation("Content root path: {Path}", app.Environment.ContentRootPath);
+appLogger.LogInformation("Web root path: {Path}", app.Environment.WebRootPath);
 
 app.Run();

@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Microsoft.Playwright;
 using NUnit.Framework;
 using System.IO;
+using TodoApp.E2E.Testing.ReportHelpers.Internal;
 
 namespace TodoApp.E2E.TestCases
 {
@@ -59,7 +60,7 @@ namespace TodoApp.E2E.TestCases
                 TestContext.Out.WriteLine($"Page title: {await _page.TitleAsync()}");
                 
                 // Take a screenshot before login
-                await TakeScreenshotAsync("before-login");
+                await E2ETestReportManager.CaptureScreenshotAsync(_page, "before-login");
                 
                 // Fill in login form
                 TestContext.Out.WriteLine("Filling login form...");
@@ -77,7 +78,7 @@ namespace TodoApp.E2E.TestCases
                 );
 
                 // Take a screenshot after login
-                await TakeScreenshotAsync("after-login");
+                await E2ETestReportManager.CaptureScreenshotAsync(_page, "after-login");
                 
                 // Verify successful login by checking if we're on a page that requires authentication
                 var currentUrl = _page.Url.ToLower();
@@ -125,47 +126,87 @@ namespace TodoApp.E2E.TestCases
                 
                 Assert.That(isLoggedIn, Is.True, $"Login verification failed. Current URL: {_page.Url}");
                 TestContext.Out.WriteLine("Login test passed successfully!");
+                await SaveTestReportAsync(TestContext.CurrentContext.Test.Name, true);
             }
             catch (Exception ex)
             {
-                await TakeScreenshotAsync("login-test-failed");
+                await E2ETestReportManager.CaptureScreenshotAsync(_page, "login-test-failed");
                 var errorMessage = await _page.EvaluateAsync<string>(
                     "document.querySelector('.validation-summary-errors')?.innerText || ''");
-                TestContext.Out.WriteLine($"Login test failed: {ex}");
-                if (!string.IsNullOrEmpty(errorMessage))
+                if (string.IsNullOrEmpty(errorMessage))
                 {
-                    TestContext.Out.WriteLine($"Error message from page: {errorMessage}");
+                    errorMessage = ex.Message;
                 }
+                
+                TestContext.Out.WriteLine($"Login test failed: {errorMessage}");
+                await SaveTestReportAsync(TestContext.CurrentContext.Test.Name, false, errorMessage);
                 throw;
             }
         }
 
-        private async Task TakeScreenshotAsync(string prefix)
+        private async Task<string> TakeScreenshotAsync(string stepName)
+        {
+            return await E2ETestReportManager.CaptureScreenshotAsync(_page, stepName);
+        }
+        
+        private async Task SaveTestReportAsync(string testName, bool testResult, string? errorMessage = null)
         {
             try
             {
-                var screenshotPath = Path.Combine(
-                    TestContext.CurrentContext.TestDirectory,
-                    $"screenshot-{DateTime.Now:yyyyMMddHHmmss}-{prefix}.png");
+                if (string.IsNullOrWhiteSpace(testName))
+                {
+                    testName = TestContext.CurrentContext?.Test?.Name ?? "UnknownTest";
+                }
+
+                var report = new System.Text.StringBuilder();
+                report.AppendLine("# Test Execution Report");
+                report.AppendLine($"**Test Name:** {testName}");
+                report.AppendLine($"**Execution Time:** {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                report.AppendLine($"**Status:** {(testResult ? "✅ PASSED" : "❌ FAILED")}");
                 
-                await _page.ScreenshotAsync(new PageScreenshotOptions 
-                { 
-                    Path = screenshotPath,
-                    FullPage = true
-                });
+                if (_browser?.BrowserType != null)
+                {
+                    report.AppendLine($"**Browser:** {_browser.BrowserType.Name}");
+                }
                 
-                TestContext.Out.WriteLine($"Screenshot saved: {screenshotPath}");
-                TestContext.AddTestAttachment(screenshotPath);
+                if (_page?.ViewportSize != null)
+                {
+                    report.AppendLine($"**Viewport:** {_page.ViewportSize.Width}x{_page.ViewportSize.Height}");
+                }
                 
-                // Also save page HTML for debugging
-                var pageContent = await _page.ContentAsync();
-                var htmlPath = Path.ChangeExtension(screenshotPath, ".html");
-                await File.WriteAllTextAsync(htmlPath, pageContent);
-                TestContext.Out.WriteLine($"Page HTML saved: {htmlPath}");
+                if (!string.IsNullOrWhiteSpace(errorMessage))
+                {
+                    report.AppendLine("\n## Error Details");
+                    report.AppendLine($"```\n{errorMessage}\n```");
+                }
+                
+                // Get all screenshots for this test
+                if (Directory.Exists(E2ETestReportManager.BaseReportsPath))
+                {
+                    var screenshotFiles = Directory.GetFiles(
+                        E2ETestReportManager.BaseReportsPath, 
+                        "screenshot_*.png", 
+                        SearchOption.AllDirectories)
+                        .OrderBy(f => f)
+                        .ToList();
+                    
+                    if (screenshotFiles.Count > 0)
+                    {
+                        report.AppendLine("\n## Screenshots");
+                        foreach (var screenshot in screenshotFiles)
+                        {
+                            var relativePath = Path.GetRelativePath(E2ETestReportManager.BaseReportsPath, screenshot);
+                            report.AppendLine($"![Screenshot]({relativePath})\n*{Path.GetFileNameWithoutExtension(screenshot)}*\n");
+                        }
+                    }
+                }
+                
+                // Save the markdown report
+                await E2ETestReportManager.SaveMarkdownReportAsync(report.ToString(), testName);
             }
             catch (Exception ex)
             {
-                TestContext.Out.WriteLine($"Failed to take screenshot: {ex}");
+                TestContext.Out.WriteLine($"Failed to generate test report: {ex.Message}");
             }
         }
 

@@ -113,8 +113,25 @@ namespace TodoApp.Data
                 throw new ArgumentNullException(nameof(todo));
             }
 
-            _context.Entry(todo).State = EntityState.Modified;
-            await Task.CompletedTask; // Make the method truly async
+            try
+            {
+                var existingTodo = await _context.TodoItems
+                    .FirstOrDefaultAsync(t => t.Id == todo.Id);
+
+                if (existingTodo == null)
+                {
+                    throw new InvalidOperationException($"Todo with ID {todo.Id} not found");
+                }
+
+                // Update the properties of the existing entity
+                _context.Entry(existingTodo).CurrentValues.SetValues(todo);
+                _context.Entry(existingTodo).State = EntityState.Modified;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error updating todo {todo.Id}: {ex.Message}");
+                throw; // Re-throw to allow controller to handle the error
+            }
         }
 
         public async Task DeleteTodoAsync(int id, string userId)

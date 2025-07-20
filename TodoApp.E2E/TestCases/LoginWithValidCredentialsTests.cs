@@ -1,15 +1,15 @@
 using System;
+using System.IO;
 using System.Threading.Tasks;
 using Microsoft.Playwright;
 using NUnit.Framework;
-using System.IO;
-using TodoApp.E2E.Testing.ReportHelpers.Internal;
+using TodoApp.E2E.Utils;
 
 namespace TodoApp.E2E.TestCases
 {
     [TestFixture]
     [Category("Login")]
-    public class LoginTests : IDisposable
+    public class LoginWithValidCredentialsTests : IDisposable
     {
         private readonly IBrowser _browser;
         private readonly IBrowserContext _context;
@@ -19,7 +19,7 @@ namespace TodoApp.E2E.TestCases
         private readonly IPlaywright _playwright;
         private readonly string _baseUrl;
 
-        public LoginTests()
+        public LoginWithValidCredentialsTests()
         {
             _baseUrl = "http://localhost:5001";
             TestContext.Out.WriteLine($"Using base URL: {_baseUrl}");
@@ -41,8 +41,9 @@ namespace TodoApp.E2E.TestCases
         }
 
         [Test]
-        public async Task CanLoginWithValidCredentials()
+        public async Task Should_LoginSuccessfully_WithValidCredentials()
         {
+            string testName = nameof(Should_LoginSuccessfully_WithValidCredentials);
             try
             {
                 // Navigate to the login page
@@ -59,8 +60,9 @@ namespace TodoApp.E2E.TestCases
                 TestContext.Out.WriteLine($"Current URL: {_page.Url}");
                 TestContext.Out.WriteLine($"Page title: {await _page.TitleAsync()}");
                 
-                // Take a screenshot before login
-                await E2ETestReportManager.CaptureScreenshotAsync(_page, "before-login");
+                // Initialize test run and take a screenshot before login
+                E2ETestReportManager.InitializeTestRun(testName);
+                await E2ETestReportManager.CaptureScreenshotAsync(_page, "01-before-login");
                 
                 // Fill in login form
                 TestContext.Out.WriteLine("Filling login form...");
@@ -78,7 +80,7 @@ namespace TodoApp.E2E.TestCases
                 );
 
                 // Take a screenshot after login
-                await E2ETestReportManager.CaptureScreenshotAsync(_page, "after-login");
+                await E2ETestReportManager.CaptureScreenshotAsync(_page, "02-after-login");
                 
                 // Verify successful login by checking if we're on a page that requires authentication
                 var currentUrl = _page.Url.ToLower();
@@ -97,13 +99,6 @@ namespace TodoApp.E2E.TestCases
                                     await _page.IsVisibleAsync("header") ||
                                     await _page.IsVisibleAsync(".navbar") ||
                                     await _page.IsVisibleAsync(".nav");
-                
-                // Log the findings
-                TestContext.Out.WriteLine($"Current URL: {_page.Url}");
-                TestContext.Out.WriteLine($"Is on home page: {isOnHomePage}");
-                TestContext.Out.WriteLine($"Has welcome message: {hasWelcomeMessage}");
-                TestContext.Out.WriteLine($"Has logout link: {hasLogoutLink}");
-                TestContext.Out.WriteLine($"Has navigation elements: {hasNavElements}");
                 
                 // If we're on the home page and see common elements, consider login successful
                 var isLoggedIn = isOnHomePage && (hasWelcomeMessage || hasLogoutLink || hasNavElements);
@@ -126,11 +121,11 @@ namespace TodoApp.E2E.TestCases
                 
                 Assert.That(isLoggedIn, Is.True, $"Login verification failed. Current URL: {_page.Url}");
                 TestContext.Out.WriteLine("Login test passed successfully!");
-                await SaveTestReportAsync(TestContext.CurrentContext.Test.Name, true);
+                await E2ETestReportManager.SaveTestReportAsync(testName, true, "Login successful");
             }
             catch (Exception ex)
             {
-                await E2ETestReportManager.CaptureScreenshotAsync(_page, "login-test-failed");
+                await E2ETestReportManager.CaptureScreenshotAsync(_page, "error-login-failed");
                 var errorMessage = await _page.EvaluateAsync<string>(
                     "document.querySelector('.validation-summary-errors')?.innerText || ''");
                 if (string.IsNullOrEmpty(errorMessage))
@@ -139,16 +134,20 @@ namespace TodoApp.E2E.TestCases
                 }
                 
                 TestContext.Out.WriteLine($"Login test failed: {errorMessage}");
-                await SaveTestReportAsync(TestContext.CurrentContext.Test.Name, false, errorMessage);
+                await E2ETestReportManager.SaveTestReportAsync(testName, false, $"Login failed: {errorMessage}");
                 throw;
             }
         }
 
-        private async Task<string> TakeScreenshotAsync(string stepName)
+        public void Dispose()
         {
-            return await E2ETestReportManager.CaptureScreenshotAsync(_page, stepName);
+            _page?.CloseAsync().GetAwaiter().GetResult();
+            _context?.CloseAsync().GetAwaiter().GetResult();
+            _browser?.CloseAsync().GetAwaiter().GetResult();
+            _playwright?.Dispose();
+            GC.SuppressFinalize(this);
         }
-        
+
         private async Task SaveTestReportAsync(string testName, bool testResult, string? errorMessage = null)
         {
             try
@@ -180,43 +179,20 @@ namespace TodoApp.E2E.TestCases
                     report.AppendLine($"```\n{errorMessage}\n```");
                 }
                 
-                // Get all screenshots for this test
-                if (Directory.Exists(E2ETestReportManager.BaseReportsPath))
+                // Save the report to a file
+                var reportPath = Path.Combine(E2ETestReportManager.BaseReportsPath, $"{testName}_{DateTime.Now:yyyyMMddHHmmss}.md");
+                var directoryPath = Path.GetDirectoryName(reportPath);
+                if (!string.IsNullOrEmpty(directoryPath))
                 {
-                    var screenshotFiles = Directory.GetFiles(
-                        E2ETestReportManager.BaseReportsPath, 
-                        "screenshot_*.png", 
-                        SearchOption.AllDirectories)
-                        .OrderBy(f => f)
-                        .ToList();
-                    
-                    if (screenshotFiles.Count > 0)
-                    {
-                        report.AppendLine("\n## Screenshots");
-                        foreach (var screenshot in screenshotFiles)
-                        {
-                            var relativePath = Path.GetRelativePath(E2ETestReportManager.BaseReportsPath, screenshot);
-                            report.AppendLine($"![Screenshot]({relativePath})\n*{Path.GetFileNameWithoutExtension(screenshot)}*\n");
-                        }
-                    }
+                    Directory.CreateDirectory(directoryPath);
                 }
-                
-                // Save the markdown report
-                await E2ETestReportManager.SaveMarkdownReportAsync(report.ToString(), testName);
+                await File.WriteAllTextAsync(reportPath, report.ToString());
+                TestContext.Out.WriteLine($"Test report saved to: {reportPath}");
             }
             catch (Exception ex)
             {
-                TestContext.Out.WriteLine($"Failed to generate test report: {ex.Message}");
+                TestContext.Out.WriteLine($"Error saving test report: {ex.Message}");
             }
-        }
-
-        public void Dispose()
-        {
-            _page?.CloseAsync().GetAwaiter().GetResult();
-            _context?.CloseAsync().GetAwaiter().GetResult();
-            _browser?.CloseAsync().GetAwaiter().GetResult();
-            _playwright?.Dispose();
-            GC.SuppressFinalize(this);
         }
     }
 }

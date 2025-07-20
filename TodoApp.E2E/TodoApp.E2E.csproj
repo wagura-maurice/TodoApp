@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
   </PropertyGroup>
 
   <ItemGroup>
@@ -26,7 +27,16 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\TodoApp.csproj" />
+    <ProjectReference Include="..\TodoApp.csproj">
+      <Private>False</Private>
+      <ExcludeAssets>all</ExcludeAssets>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <SkipGetTargetFrameworkProperties>true</SkipGetTargetFrameworkProperties>
+    </ProjectReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="Testing/ReportHelpers/E2ETestReportManager.cs" />
   </ItemGroup>
 
 </Project>
